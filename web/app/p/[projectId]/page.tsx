@@ -1,23 +1,23 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SiteFooter, TopNav } from "../../../components/Chrome";
 import { EXPLORER_URL, HACKATHON_START, explorerAddress, explorerTx } from "../../../lib/chain";
 import { fetchCommitMeta, fetchForcedCommits } from "../../../lib/github";
-import { fetchProject } from "../../../lib/indexer";
+import { fetchProject, type ProjectModel } from "../../../lib/indexer";
 
 export const revalidate = 30;
 
-function fmt(ts: number): string {
-  return new Date(ts * 1000).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+function fmtClock(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(11, 19) + " UTC";
 }
-
+function fmtDate(ts: number): string {
+  return new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ");
+}
 function offsetFromStart(ts: number): string {
   const ms = ts * 1000 - HACKATHON_START.getTime();
   const sign = ms < 0 ? "−" : "+";
   const abs = Math.abs(ms);
-  const h = Math.floor(abs / 3_600_000);
-  const m = Math.floor((abs % 3_600_000) / 60_000);
-  return `${sign}${h}h ${m}m`;
+  return `${sign}${Math.floor(abs / 3_600_000)}h ${Math.floor((abs % 3_600_000) / 60_000)}m`;
 }
 
 export async function generateMetadata({
@@ -26,9 +26,196 @@ export async function generateMetadata({
   params: { projectId: string };
 }): Promise<Metadata> {
   return {
-    title: `Aletheia — proof of project #${params.projectId}`,
+    title: `Aletheia | proof of project #${params.projectId}`,
     openGraph: { images: [`/api/og/${params.projectId}`] },
   };
+}
+
+type Tone = "cyan" | "fuchsia" | "error";
+
+interface TimelineNode {
+  time: number;
+  tone: Tone;
+  icon: string;
+  title: string;
+  card: React.ReactNode;
+  seal?: boolean;
+}
+
+const nodeRing: Record<Tone, string> = {
+  cyan: "border-secondary bloom-cyan text-secondary",
+  fuchsia: "border-primary bloom-primary text-primary",
+  error: "border-error bloom-error text-error animate-pulse",
+};
+const dateTone: Record<Tone, string> = {
+  cyan: "text-secondary",
+  fuchsia: "text-primary",
+  error: "text-error",
+};
+
+function buildNodes(
+  project: ProjectModel,
+  meta: Map<string, { message: string; author: string }>,
+  forced: Set<string>
+): TimelineNode[] {
+  const nodes: TimelineNode[] = [];
+
+  nodes.push({
+    time: project.createdAt,
+    tone: "cyan",
+    icon: "app_registration",
+    title: "Registration",
+    card: (
+      <>
+        <p className="text-on-surface-variant text-body-md mb-4">
+          Repository bound to the registry and its attestor key. Every push from here is sealed.
+        </p>
+        <div className="bg-surface-container-lowest p-3 rounded font-mono text-mono-data text-secondary truncate">
+          owner&nbsp;{project.owner}
+        </div>
+      </>
+    ),
+  });
+
+  for (const entry of project.timeline) {
+    if (entry.kind === "attestation") {
+      const isForced = forced.has(entry.commitHash);
+      const m = meta.get(entry.commitHash);
+      if (isForced) {
+        nodes.push({
+          time: entry.timestamp,
+          tone: "error",
+          icon: "warning",
+          title: "History force-push",
+          card: (
+            <div className="relative">
+              <div className="absolute -top-3 -right-3 bg-error text-on-error px-2 py-1 rounded text-[10px] font-black uppercase">
+                Rewrite marked
+              </div>
+              <p className="text-on-error-container text-body-md mb-4">
+                This push rewrote history. The new head is still sealed at a real time — the rewrite
+                is shown, not hidden.
+              </p>
+              <a
+                href={explorerTx(entry.txHash)}
+                className="text-error text-label-sm uppercase underline hover:text-on-surface transition-colors"
+              >
+                View on explorer
+              </a>
+            </div>
+          ),
+        });
+      } else {
+        nodes.push({
+          time: entry.timestamp,
+          tone: "fuchsia",
+          icon: "account_tree",
+          title: m?.message ?? "Commit attested",
+          card: (
+            <>
+              <p className="text-on-surface-variant text-body-md mb-4">
+                Commit and tree hash sealed on chain{m?.author ? ` · ${m.author}` : ""}.
+              </p>
+              <div className="bg-surface-container-lowest p-3 rounded font-mono text-mono-data text-primary flex items-center justify-between gap-3">
+                <span className="truncate min-w-0">{entry.commitHash.slice(0, 18)}…</span>
+                <a href={explorerTx(entry.txHash)} className="shrink-0 text-secondary uppercase">
+                  tx ↗
+                </a>
+              </div>
+            </>
+          ),
+        });
+      }
+    } else {
+      nodes.push({
+        time: entry.timestamp,
+        tone: "cyan",
+        icon: "deployed_code",
+        title: `Contract linked · ${entry.label}`,
+        card: (
+          <div className="bg-surface-container-lowest p-3 rounded font-mono text-mono-data text-on-surface-variant flex items-center justify-between gap-3">
+            <span className="truncate min-w-0">{entry.address}</span>
+            <a href={explorerAddress(entry.address)} className="shrink-0 text-secondary uppercase">
+              ↗
+            </a>
+          </div>
+        ),
+      });
+    }
+  }
+
+  if (project.sealedAt !== null) {
+    nodes.push({
+      time: project.sealedAt,
+      tone: "fuchsia",
+      icon: "lock",
+      title: "Sealed state",
+      seal: true,
+      card: (
+        <p className="text-on-surface text-body-md">
+          The record is closed. Every further attestation reverts — the proof cycle is complete.
+        </p>
+      ),
+    });
+  }
+
+  return nodes;
+}
+
+function NodeRow({ node, index }: { node: TimelineNode; index: number }) {
+  const cardRight = index % 2 === 0;
+  const date = (
+    <div className={`hidden md:block w-5/12 ${cardRight ? "text-right pr-12" : "text-left pl-12"}`}>
+      <span className={`font-mono text-mono-data ${dateTone[node.tone]}`}>{fmtClock(node.time)}</span>
+    </div>
+  );
+  const dot = (
+    <div
+      className={`z-20 shrink-0 rounded-full bg-background border-4 flex items-center justify-center ${
+        node.seal ? "w-16 h-16 border-primary-container seal-bloom" : `w-12 h-12 ${nodeRing[node.tone]}`
+      }`}
+    >
+      <span
+        className={`material-symbols-outlined ms-fill ${node.seal ? "text-primary text-3xl" : ""}`}
+      >
+        {node.icon}
+      </span>
+    </div>
+  );
+  const cardWrap = node.seal
+    ? "bg-surface-container-high p-8 rounded-xl border-2 border-primary-container/40"
+    : node.tone === "error"
+      ? "bg-error-container/20 p-6 rounded-xl border border-error/50"
+      : "bg-surface-container p-6 rounded-xl border border-outline-variant/20 hover:border-primary/40 transition-all";
+  const card = (
+    <div className={`w-full md:w-5/12 mt-4 md:mt-0 ${cardRight ? "md:pl-12" : "md:pr-12"}`}>
+      <div className={cardWrap}>
+        <h3
+          className={`font-display ${node.seal ? "text-headline-lg" : "text-headline-lg-mobile"} mb-2 ${
+            node.tone === "error" ? "text-error" : node.seal ? "text-primary" : "text-on-surface"
+          }`}
+        >
+          {node.title}
+        </h3>
+        {node.card}
+        <div className="md:hidden mt-3 font-mono text-mono-data text-outline">
+          {fmtClock(node.time)}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className={`flex flex-col items-center justify-between w-full ${
+        cardRight ? "md:flex-row" : "md:flex-row-reverse"
+      }`}
+    >
+      {date}
+      {dot}
+      {card}
+    </div>
+  );
 }
 
 export default async function ProofPage({ params }: { params: { projectId: string } }) {
@@ -44,188 +231,132 @@ export default async function ProofPage({ params }: { params: { projectId: strin
   const [meta, forced] = await Promise.all([
     project.repoFullName
       ? fetchCommitMeta(project.repoFullName, commitShas)
-      : Promise.resolve(new Map<string, never>()),
+      : Promise.resolve(new Map<string, { message: string; author: string }>()),
     fetchForcedCommits(project.projectId),
   ]);
 
   const sealed = project.sealedAt !== null;
   const firstAttestation = project.timeline.find((e) => e.kind === "attestation");
+  const nodes = buildNodes(project, meta, forced);
+  const title = project.repoFullName ?? `Project #${project.projectId}`;
+  const verifyCmd = `npx aletheia-verify ${project.projectId}`;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 sm:py-16">
-      <header className="mb-10 text-center">
-        <p className="font-display text-oxblood text-lg tracking-[0.3em] uppercase">Aletheia</p>
-        <h1 className="font-display mt-2 text-4xl sm:text-5xl font-semibold break-words">
-          {project.repoFullName ?? `Project #${project.projectId}`}
-        </h1>
-        <p className="mt-2 text-ink-soft">
-          <a className="underline decoration-line hover:decoration-oxblood" href={project.repoUrl}>
-            {project.repoUrl}
-          </a>
-        </p>
-      </header>
-
-      {/* Summary strip */}
-      <section
-        className={`relative border ${sealed ? "border-oxblood" : "border-line"} bg-white/40 px-6 py-5 mb-12`}
-      >
-        {sealed && (
-          <div
-            aria-label="sealed"
-            className="absolute -top-5 -right-4 h-16 w-16 rounded-full bg-oxblood text-parchment
-                       flex items-center justify-center rotate-12 shadow-lg"
-          >
-            <span className="font-display text-xs leading-tight text-center">
-              SEALED
-              <br />
-              ἀλήθεια
-            </span>
-          </div>
-        )}
-        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 text-sm">
-          <div>
-            <dt className="text-ink-soft">First attestation</dt>
-            <dd className="font-medium">{firstAttestation ? fmt(firstAttestation.timestamp) : "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-ink-soft">Offset from start</dt>
-            <dd className="font-medium">
-              {firstAttestation ? offsetFromStart(firstAttestation.timestamp) : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-ink-soft">Attestations</dt>
-            <dd className="font-medium">{project.attestationCount}</dd>
-          </div>
-          <div>
-            <dt className="text-ink-soft">Record</dt>
-            <dd className={`font-medium ${sealed ? "text-oxblood" : ""}`}>
-              {sealed ? (
-                project.sealTxHash ? (
-                  <a className="underline" href={explorerTx(project.sealTxHash)}>
-                    sealed {fmt(project.sealedAt!)}
-                  </a>
-                ) : (
-                  `sealed ${fmt(project.sealedAt!)}`
-                )
-              ) : (
-                "open"
-              )}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      {/* Column timeline */}
-      <section className="relative">
-        <div className="absolute left-4 sm:left-1/2 top-0 bottom-0 w-px bg-line" aria-hidden />
-        <ol className="space-y-10">
-          <li className="relative pl-12 sm:pl-0">
-            <TimelineDot />
-            <div className="sm:w-[calc(50%-2rem)] sm:ml-auto sm:pl-8">
-              <p className="text-xs text-ink-soft">{fmt(project.createdAt)}</p>
-              <p className="font-display text-xl">Project registered</p>
-              <p className="text-sm text-ink-soft break-all">
-                owner{" "}
-                <a className="underline" href={explorerAddress(project.owner)}>
-                  {project.owner.slice(0, 10)}…
+    <div className="min-h-screen flex flex-col">
+      <TopNav active="proofs" />
+      <main className="flex-grow pt-24 pb-12 px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto w-full">
+        {/* Header bento */}
+        <header className="mb-12 grid grid-cols-1 md:grid-cols-12 gap-gutter">
+          <div className="md:col-span-8 p-8 bg-surface-container border border-outline-variant/30 rounded-xl flex flex-col justify-end min-h-[240px] relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+              <span className="material-symbols-outlined ms-fill text-[120px]">security</span>
+            </div>
+            <div className="z-10">
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
+                <span
+                  className={`px-3 py-1 rounded-full text-label-sm border ${
+                    sealed
+                      ? "bg-primary-container/20 text-primary border-primary/30"
+                      : "bg-secondary-container/20 text-secondary border-secondary/30"
+                  }`}
+                >
+                  {sealed ? "SEALED RECORD" : "ACTIVE RECORD"}
+                </span>
+                <span className="text-on-surface-variant font-mono text-mono-data">
+                  PROJECT ID: #{project.projectId}
+                </span>
+              </div>
+              <h1 className="font-display text-[28px] leading-tight sm:text-[36px] md:text-headline-xl text-on-surface mb-2 break-all">
+                {title}
+              </h1>
+              <p className="text-on-surface-variant text-body-md max-w-xl">
+                <a href={project.repoUrl} className="hover:text-primary transition-colors">
+                  {project.repoUrl}
                 </a>
               </p>
             </div>
-          </li>
-
-          {project.timeline.map((entry, i) => (
-            <li key={i} className="relative pl-12 sm:pl-0">
-              <TimelineDot accent={entry.kind === "contract"} />
-              <div
-                className={`sm:w-[calc(50%-2rem)] ${i % 2 === 0 ? "sm:pr-8 sm:text-right" : "sm:ml-auto sm:pl-8"}`}
-              >
-                {entry.kind === "attestation" ? (
-                  <>
-                    <p className="text-xs text-ink-soft">{fmt(entry.timestamp)}</p>
-                    <p className="font-display text-xl break-words">
-                      {meta.get(entry.commitHash)?.message ?? "Commit attested"}
-                    </p>
-                    <p className="text-sm text-ink-soft">
-                      <code className="text-oxblood">{entry.commitHash.slice(0, 12)}</code>
-                      {meta.get(entry.commitHash)?.author
-                        ? ` · ${meta.get(entry.commitHash)!.author}`
-                        : ""}
-                    </p>
-                    <p className="text-xs mt-1">
-                      <a className="underline text-ink-soft" href={explorerTx(entry.txHash)}>
-                        view on explorer ↗
-                      </a>
-                      <span className="ml-2 text-green-800">✓ on-chain</span>
-                      {forced.has(entry.commitHash) && (
-                        <span className="ml-2 text-oxblood font-medium">
-                          ⚠ history rewritten here
-                        </span>
-                      )}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-xs text-ink-soft">{fmt(entry.timestamp)}</p>
-                    <p className="font-display text-xl">
-                      Contract linked · <span className="text-oxblood">{entry.label}</span>
-                    </p>
-                    <p className="text-xs mt-1 break-all">
-                      <a className="underline text-ink-soft" href={explorerAddress(entry.address)}>
-                        {entry.address} ↗
-                      </a>
-                    </p>
-                  </>
-                )}
+          </div>
+          <div className="md:col-span-4 grid grid-rows-2 gap-gutter">
+            <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-6 flex flex-col justify-between">
+              <span className="text-on-surface-variant text-label-sm uppercase">
+                First attestation
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-secondary">schedule</span>
+                <span className="text-headline-lg-mobile font-display text-secondary">
+                  {firstAttestation ? fmtDate(firstAttestation.timestamp) : "—"}
+                </span>
               </div>
-            </li>
-          ))}
-
-          {sealed && (
-            <li className="relative pl-12 sm:pl-0">
-              <TimelineDot seal />
-              <div className="sm:w-[calc(50%-2rem)] sm:ml-auto sm:pl-8">
-                <p className="text-xs text-ink-soft">{fmt(project.sealedAt!)}</p>
-                <p className="font-display text-2xl text-oxblood">Record sealed</p>
-                <p className="text-sm text-ink-soft">No further attestations are possible.</p>
+              <span className="font-mono text-mono-data text-outline">
+                {firstAttestation ? `${offsetFromStart(firstAttestation.timestamp)} from start` : ""}
+              </span>
+            </div>
+            <div className="bg-surface-container border border-outline-variant/30 rounded-xl p-6 flex flex-col justify-between">
+              <span className="text-on-surface-variant text-label-sm uppercase">
+                Verification count
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined ms-fill text-primary">verified</span>
+                <span className="text-headline-lg font-display text-primary">
+                  {project.attestationCount} attestations
+                </span>
               </div>
-            </li>
-          )}
-        </ol>
-      </section>
+            </div>
+          </div>
+        </header>
 
-      {/* Verify block */}
-      <section className="mt-16 border border-line bg-white/40 p-6">
-        <h2 className="font-display text-2xl mb-2">Verify this record yourself</h2>
-        <p className="text-sm text-ink-soft mb-3">
-          No trust required — recompute every hash from a fresh clone and compare against the chain:
-        </p>
-        <pre className="bg-ink text-parchment text-sm px-4 py-3 overflow-x-auto">
-          <code>npx aletheia-verify {project.projectId}</code>
-        </pre>
-        <p className="text-xs text-ink-soft mt-3">
-          Aletheia proves <em>existence by time</em> and <em>continuity</em> — not authorship. Explorer:{" "}
-          <a className="underline" href={EXPLORER_URL}>
-            {EXPLORER_URL.replace("https://", "")}
-          </a>
-        </p>
-      </section>
+        {/* Timeline */}
+        <section className="relative py-8">
+          <div className="absolute left-6 md:left-1/2 top-0 bottom-0 w-px timeline-line opacity-30 md:-translate-x-1/2" />
+          <div className="space-y-16 md:space-y-24 relative pl-0 md:pl-0">
+            {nodes.map((node, i) => (
+              <NodeRow key={i} node={node} index={i} />
+            ))}
+          </div>
+        </section>
 
-      <footer className="mt-12 text-center text-xs text-ink-soft">
-        <Link className="underline" href="/">
-          ← all projects
-        </Link>
-      </footer>
-    </main>
-  );
-}
-
-function TimelineDot({ accent, seal }: { accent?: boolean; seal?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`absolute left-4 sm:left-1/2 -translate-x-1/2 top-1 block rounded-full
-        ${seal ? "h-5 w-5 bg-oxblood ring-4 ring-oxblood/20" : accent ? "h-3.5 w-3.5 bg-oxblood" : "h-3 w-3 bg-ink"}`}
-    />
+        {/* Verify terminal */}
+        <section className="mt-20">
+          <div className="bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden shadow-2xl">
+            <div className="bg-surface-container px-4 py-2 flex items-center justify-between border-b border-outline-variant/20">
+              <div className="flex gap-2">
+                <div className="w-3 h-3 rounded-full bg-error/40" />
+                <div className="w-3 h-3 rounded-full bg-primary/40" />
+                <div className="w-3 h-3 rounded-full bg-secondary/40" />
+              </div>
+              <div className="text-on-surface-variant text-label-sm uppercase tracking-widest">
+                Independent verification
+              </div>
+              <div className="w-8" />
+            </div>
+            <div className="p-6 font-mono text-mono-data bg-black/40">
+              <div className="text-secondary mb-3">$ {verifyCmd}</div>
+              <div className="text-on-surface-variant opacity-70">
+                # clones the repo blobless and recomputes every commit + tree hash
+              </div>
+              <div className="text-on-surface-variant opacity-70">
+                # compares each pair against this project&apos;s on-chain attestations
+              </div>
+              <div className="text-on-surface-variant opacity-70">
+                # exits non-zero if any attested commit can&apos;t be reproduced
+              </div>
+              <div className="text-primary mt-3">
+                No keys, no writes, no trust in Aletheia&apos;s servers — just Node and git.
+              </div>
+              <div className="text-outline mt-1">
+                explorer {EXPLORER_URL.replace("https://", "")}
+              </div>
+              <div className="mt-3 flex items-center">
+                <span className="text-secondary animate-pulse">_</span>
+              </div>
+            </div>
+          </div>
+          <p className="mt-4 text-center text-mono-data font-mono text-outline">
+            Aletheia proves existence by time and continuity — not authorship.
+          </p>
+        </section>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }

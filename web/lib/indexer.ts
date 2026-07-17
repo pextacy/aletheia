@@ -1,4 +1,4 @@
-import type { AbiEvent } from "viem";
+import { keccak256, toBytes, type AbiEvent } from "viem";
 import { DEPLOY_BLOCK, REGISTRY_ADDRESS, events, publicClient, registryAbi } from "./chain";
 
 export interface AttestationEntry {
@@ -140,6 +140,52 @@ export interface RecentProject {
   repoUrl: string;
   owner: string;
   timestamp: number;
+}
+
+/**
+ * Reduce any GitHub URL to the canonical `github.com/owner/repo` path the
+ * registry hashes. Must stay byte-identical to RegisterFlow's canonicalizer —
+ * the repoHash is keccak256 over this exact string, so any divergence would
+ * make a genuinely-registered repo look absent. Returns null when the input
+ * isn't a recognizable GitHub repo URL.
+ */
+export function canonicalRepoPath(url: string): string | null {
+  const m = url
+    .trim()
+    .match(/^(?:https?:\/\/)?(github\.com\/[^/]+\/[^/#?]+?)(?:\.git)?\/?$/i);
+  return m ? m[1]!.toLowerCase() : null;
+}
+
+/** keccak256 of the canonical repo path — the on-chain repoHash key. */
+export function repoHashFromPath(path: string): `0x${string}` {
+  return keccak256(toBytes(path));
+}
+
+export interface RepoLookup {
+  /** Input reduced to `github.com/owner/repo`, or null if it wasn't a repo URL. */
+  path: string | null;
+  /** The keccak256 key derived from `path`, or null when `path` is null. */
+  repoHash: `0x${string}` | null;
+  /** Registry project id, or 0 when no repo hashes to this key. */
+  projectId: number;
+}
+
+/**
+ * Resolve a user-supplied GitHub URL to its registry project id by hashing the
+ * canonical path and reading `projectByRepo`. The lookup is trustless: the same
+ * keccak256 anyone can recompute, read straight from the chain.
+ */
+export async function lookupProjectByRepo(url: string): Promise<RepoLookup> {
+  const path = canonicalRepoPath(url);
+  if (!path) return { path: null, repoHash: null, projectId: 0 };
+  const repoHash = repoHashFromPath(path);
+  const id = await publicClient.readContract({
+    address: REGISTRY_ADDRESS,
+    abi: registryAbi,
+    functionName: "projectByRepo",
+    args: [repoHash],
+  });
+  return { path, repoHash, projectId: Number(id) };
 }
 
 export async function fetchRecentProjects(limit = 12): Promise<RecentProject[]> {

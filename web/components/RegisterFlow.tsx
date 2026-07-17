@@ -48,7 +48,7 @@ function CopyButton({ value }: { value: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="shrink-0 border border-line px-2 py-0.5 text-xs hover:border-oxblood hover:text-oxblood"
+      className="shrink-0 border border-outline-variant/40 rounded px-2 py-0.5 text-[11px] uppercase tracking-wider text-on-surface-variant hover:border-secondary hover:text-secondary transition-colors"
     >
       {copied ? "copied" : "copy"}
     </button>
@@ -158,45 +158,47 @@ export default function RegisterFlow(props: Props) {
 
   if (step.s === "done") {
     const webhookUrl = `${props.bridgeUrl}/webhook/github`;
+    const rows: Array<{ label: string; value: string; copy?: boolean }> = [
+      { label: "Payload URL", value: webhookUrl, copy: true },
+      { label: "Content type", value: "application/json" },
+      { label: "Secret", value: step.secret, copy: true },
+      { label: "Events", value: "Just the push event" },
+    ];
     return (
-      <div className="border border-oxblood bg-white/40 p-6 space-y-4">
-        <p className="font-display text-2xl">
-          Registered as project <span className="text-oxblood">#{step.projectId}</span>
+      <div className="glass-panel rounded-xl p-6 space-y-5 border border-primary-container/40 bloom-primary">
+        <p className="font-display text-headline-lg-mobile">
+          Registered as project{" "}
+          <span className="text-primary bloom-fuchsia-text">#{step.projectId}</span>
         </p>
-        <p className="text-sm">
-          Now add a webhook in your repo:{" "}
-          <span className="text-ink-soft">Settings → Webhooks → Add webhook</span>
+        <p className="text-body-md text-on-surface-variant">
+          Add the webhook to your repo:{" "}
+          <span className="text-secondary">Settings → Webhooks → Add webhook</span>
         </p>
-        <div className="space-y-3 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-ink-soft">Payload URL</span>
-            <code className="truncate">{webhookUrl}</code>
-            <CopyButton value={webhookUrl} />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-ink-soft">Content type</span>
-            <code>application/json</code>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-ink-soft">Secret</span>
-            <code className="truncate">{step.secret}</code>
-            <CopyButton value={step.secret} />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-28 shrink-0 text-ink-soft">Events</span>
-            <code>Just the push event</code>
-          </div>
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div
+              key={r.label}
+              className="flex items-center gap-3 bg-background rounded-lg px-4 py-2.5 border border-outline-variant/20"
+            >
+              <span className="w-28 shrink-0 text-label-sm uppercase tracking-wider text-outline">
+                {r.label}
+              </span>
+              <code className="flex-1 min-w-0 truncate font-mono text-mono-data text-on-surface">
+                {r.value}
+              </code>
+              {r.copy && <CopyButton value={r.value} />}
+            </div>
+          ))}
         </div>
         {!step.secretRegistered && (
-          <p className="text-sm text-oxblood">
-            Warning: the bridge did not accept the secret binding — pushes will be rejected until it
-            does. Keep the secret and retry from this page, or run your own attestor via the GitHub
-            Action instead.
+          <p className="text-body-md text-error bg-error-container/20 border border-error/40 rounded-lg px-4 py-3">
+            The bridge did not accept the secret binding, so pushes will be rejected. Keep the secret
+            and try again, or run your own attestor with the GitHub Action instead.
           </p>
         )}
-        <p className="text-sm">
-          This secret is shown once — store it in your webhook settings now. Your proof page:{" "}
-          <a className="underline text-oxblood" href={`/p/${step.projectId}`}>
+        <p className="text-body-md text-on-surface-variant">
+          The secret is shown once — save it in your webhook settings now. Open your proof page:{" "}
+          <a className="text-primary underline" href={`/p/${step.projectId}`}>
             /p/{step.projectId}
           </a>
         </p>
@@ -206,26 +208,34 @@ export default function RegisterFlow(props: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row gap-3">
-        <input
-          value={repoUrl}
-          onChange={(e) => setRepoUrl(e.target.value)}
-          placeholder="https://github.com/you/your-project"
-          className="flex-1 border border-line bg-white/60 px-4 py-3 text-sm outline-none
-                     focus:border-oxblood placeholder:text-ink-soft/60"
-        />
-        <button
-          type="button"
-          onClick={() => void register()}
-          disabled={step.s === "working"}
-          className="bg-oxblood text-parchment px-6 py-3 text-sm font-medium
-                     hover:bg-oxblood-dark disabled:opacity-50"
-        >
-          {step.s === "working" ? "Working…" : "Register on-chain"}
-        </button>
+      <div className="glass-panel p-1 rounded-xl group focus-within:border-primary transition-colors">
+        <div className="flex flex-col md:flex-row gap-2">
+          <div className="flex-1 flex items-center bg-background px-4 py-3 rounded-lg border border-transparent group-focus-within:border-primary/20">
+            <span className="material-symbols-outlined text-outline mr-3">link</span>
+            <input
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              placeholder="github.com/you/your-project"
+              className="bg-transparent border-none focus:ring-0 focus:outline-none w-full font-mono text-mono-data text-on-surface placeholder:text-outline-variant"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void register()}
+            disabled={step.s === "working"}
+            className="bg-primary-container text-on-primary-container text-label-sm uppercase tracking-widest px-8 py-3 rounded-lg flex items-center justify-center gap-2 bloom-fuchsia hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
+          >
+            {step.s === "working" ? "Working…" : "Connect repository"}
+            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+          </button>
+        </div>
       </div>
-      {step.s === "working" && <p className="text-sm text-ink-soft">{step.msg}</p>}
-      {step.s === "error" && <p className="text-sm text-oxblood">{step.msg}</p>}
+      {step.s === "working" && (
+        <p className="text-mono-data font-mono text-secondary">{step.msg}</p>
+      )}
+      {step.s === "error" && (
+        <p className="text-mono-data font-mono text-error">{step.msg}</p>
+      )}
     </div>
   );
 }
