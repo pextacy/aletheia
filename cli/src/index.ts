@@ -13,6 +13,7 @@ import {
   type Hex,
   type PublicClient,
 } from "viem";
+import { bytes32ToOid, parseArgs, UsageError } from "./parse.js";
 
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -21,7 +22,6 @@ const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
 const DEFAULT_RPC = "https://testnet-rpc.monad.xyz";
-const DEFAULT_REGISTRY = process.env.ALETHEIA_REGISTRY ?? "";
 
 const registryAbi = parseAbi([
   "function projects(uint256 projectId) view returns (address owner, address attestor, bytes32 repoHash, uint64 createdAt, uint64 sealedAt)",
@@ -33,56 +33,6 @@ const attestedEvent = parseAbiItem(
   "event Attested(uint256 indexed projectId, bytes32 indexed commitHash, bytes32 treeHash, uint64 timestamp)"
 );
 
-interface Args {
-  projectId: bigint;
-  rpc: string;
-  registry: Hex;
-  repo?: string;
-  fromBlock?: bigint;
-}
-
-function usage(): never {
-  console.error(
-    "Usage: aletheia-verify <projectId> [--rpc <url>] [--registry <address>] [--repo <clone-url>] [--from-block <n>]"
-  );
-  process.exit(2);
-}
-
-function parseArgs(argv: string[]): Args {
-  const positional: string[] = [];
-  const flags = new Map<string, string>();
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a.startsWith("--")) {
-      const v = argv[++i];
-      if (v === undefined) usage();
-      flags.set(a.slice(2), v);
-    } else {
-      positional.push(a);
-    }
-  }
-  if (positional.length !== 1 || !/^\d+$/.test(positional[0]!)) usage();
-  const registry = flags.get("registry") ?? DEFAULT_REGISTRY;
-  if (!/^0x[0-9a-fA-F]{40}$/.test(registry)) {
-    console.error(
-      "No registry address. Pass --registry <address> or set ALETHEIA_REGISTRY."
-    );
-    process.exit(2);
-  }
-  const args: Args = {
-    projectId: BigInt(positional[0]!),
-    rpc: flags.get("rpc") ?? DEFAULT_RPC,
-    registry: registry as Hex,
-  };
-  const repo = flags.get("repo");
-  if (repo !== undefined) args.repo = repo;
-  const fromBlock = flags.get("from-block");
-  if (fromBlock !== undefined) {
-    if (!/^\d+$/.test(fromBlock)) usage();
-    args.fromBlock = BigInt(fromBlock);
-  }
-  return args;
-}
 
 /**
  * Binary-search for the earliest block whose timestamp is >= targetTs. Used to
@@ -149,13 +99,16 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-/** bytes32 → git object id, respecting the repo's object format. */
-function bytes32ToOid(value: Hex, objectFormat: "sha1" | "sha256"): string {
-  const hex = value.slice(2).toLowerCase();
-  return objectFormat === "sha1" ? hex.slice(0, 40) : hex;
+let args;
+try {
+  args = parseArgs(process.argv.slice(2), {
+    rpc: DEFAULT_RPC,
+    registry: process.env.ALETHEIA_REGISTRY ?? "",
+  });
+} catch (err) {
+  console.error(err instanceof UsageError ? err.message : String(err));
+  process.exit(2);
 }
-
-const args = parseArgs(process.argv.slice(2));
 const client = createPublicClient({ transport: http(args.rpc) });
 
 console.log(`${DIM}registry ${args.registry} · rpc ${args.rpc}${RESET}`);

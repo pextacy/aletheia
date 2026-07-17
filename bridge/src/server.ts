@@ -61,7 +61,10 @@ async function resolveCommitPairs(payload: PushPayload, repo: string): Promise<C
 }
 
 export function buildServer() {
-  const app = Fastify({ logger: true });
+  // Cap the request body: the raw payload is buffered before the HMAC check, so
+  // an explicit limit bounds pre-auth memory use. Real GitHub push payloads are
+  // well under this; 5 MB leaves generous headroom without inviting abuse.
+  const app = Fastify({ logger: true, bodyLimit: 5 * 1024 * 1024 });
 
   // Preserve the raw body — HMAC is computed over the exact bytes GitHub sent.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (_req, body, done) => {
