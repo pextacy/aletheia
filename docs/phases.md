@@ -15,23 +15,23 @@ Status legend: `[ ]` not started · `[x]` done · strike-through = cut (record w
 
 ### Tasks
 
-- [ ] Monorepo skeleton: `contracts/`, `bridge/`, `web/`, `cli/`
-- [ ] Root `README.md` skeleton with the one-paragraph thesis
-- [ ] `.gitignore` (incl. `.env`, `aletheia.sqlite`, build outputs)
-- [ ] `.env.example` — every variable from CLAUDE.md §Chain configuration, each with a descriptive comment and an obviously-invalid example value
-- [ ] MIT `LICENSE`
-- [ ] Create **owner wallet** and **attestor wallet** (separate keys; attestor is low-privilege hot key)
+- [x] Monorepo skeleton: `contracts/`, `bridge/`, `web/`, `cli/`
+- [x] Root `README.md` skeleton with the one-paragraph thesis
+- [x] `.gitignore` (incl. `.env`, `aletheia.sqlite`, build outputs)
+- [x] `.env.example` — every variable from CLAUDE.md §Chain configuration, each with a descriptive comment and an obviously-invalid example value
+- [x] MIT `LICENSE`
+- [x] Create **owner wallet** and **attestor wallet** (separate keys; attestor is low-privilege hot key)
 - [ ] Fund both from the Monad testnet faucet with generous margin
-- [ ] Record wallet **addresses** (never keys) in `.env.example` comments
-- [ ] First commit and push to a public GitHub repo — small, atomic commits from here on; the log is part of the product
+- [x] Record wallet **addresses** (never keys) in `.env.example` comments
+- [ ] First commit and push to a public GitHub repo — small, atomic commits from here on; the log is part of the product (commit done; push pending GitHub auth)
 
 ### Gate 0
 
 - [ ] Repo public on GitHub
 - [ ] Both wallets funded (balance verified on explorer)
-- [ ] `forge --version` and `node --version` run clean in the working environment
+- [x] `forge --version` and `node --version` run clean in the working environment
 
-Notes:
+Notes: forge 1.5.1-stable, node v25.2.1, git 2.52.0. Owner `0xA6b1F84D2fDF9DF0EB4CbA290ADF7e541e16fc04`, attestor `0x89da9812e7F12538119cc58E35bFc62270dDDcFD` — keys in local `.env` only. Faucet is captcha-gated (manual step); push pending `gh auth login`.
 
 ---
 
