@@ -64,7 +64,7 @@ Run `forge test` after every contract change and `tsc --noEmit` after every Type
 
 ## Design identity (web)
 
-Follow DOCS.md §Frontend. Short version: parchment-toned background, Cormorant (display serif) + Inter (body), vertical column timeline, seal iconography, generous whitespace. No default-Tailwind-blue, no gradient-purple SaaS look, everything fits the viewport without horizontal scroll. The judging rubric explicitly penalizes generic AI-generated UI.
+Follow DOCS.md §Frontend. Short version ("Cyber-Sovereign"): obsidian-purple base, electric-fuchsia primary + cyan verification accent, Geist type, Material Symbols, frosted-glass panels with neon bloom glows, and a zig-zag proof timeline with glowing nodes. No default-Tailwind-blue, no generic SaaS gradient; everything fits the viewport without horizontal scroll at 360 px and respects reduced motion. The judging rubric explicitly penalizes generic AI-generated UI.
 
 ## Definition of done, per feature
 
