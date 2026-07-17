@@ -8,8 +8,14 @@
     "build": "tsup",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "monad",
+    "provenance",
+    "attestation",
+    "git",
+    "verification"
+  ],
+  "author": "pextacy",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -29,5 +35,9 @@
     "@types/node": "^26.1.1",
     "tsup": "^8.5.1",
     "typescript": "5.9"
-  }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
 }
