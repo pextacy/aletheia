@@ -13,6 +13,9 @@ import {
 const registerAbi = parseAbi([
   "function registerProject(bytes32 repoHash, string repoUrl, address attestor) external returns (uint256)",
   "function projectByRepo(bytes32 repoHash) view returns (uint256)",
+  // Errors must be in the ABI for viem to decode a revert to its name.
+  "error RepoAlreadyRegistered()",
+  "error BadInput()",
 ]);
 
 interface Props {
@@ -144,7 +147,9 @@ export default function RegisterFlow(props: Props) {
       setStep({ s: "done", projectId: Number(projectId), secret, secretRegistered });
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
-      const msg = /RepoAlreadyRegistered|0x[0-9a-f]*3f8a95f/i.test(raw)
+      // viem decodes the revert to the error name when it is in the ABI; the raw
+      // selector 0xa525bbac is matched too as a belt-and-braces fallback.
+      const msg = /RepoAlreadyRegistered|0xa525bbac/i.test(raw)
         ? "This repository is already registered — one project per repo, enforced on-chain."
         : raw.split("\n")[0]!;
       setStep({ s: "error", msg });
