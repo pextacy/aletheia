@@ -153,7 +153,12 @@ Notes: proof page and landing rendered against the local validation chain (dev c
 - [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works *(package publish-ready — README, files allowlist, `npm pack` clean; needs `npm login`)*
 - [x] GitHub Action `aletheia.yml` written (skips gracefully without secrets) — [ ] green run on a scratch repo *(deferred: needs deployed registry)*
 
-Notes: CLI validated end-to-end against a local chain (dev check, not a gate claim): 2 real commits verified green, a wrong-tree attestation flagged red MISMATCH, an absent commit flagged yellow MISSING, exit code 1 on red. Gate 4 itself runs against live Monad testnet after deploy. `scripts/chain-setup.sh` collapses deploy → verify → register → attest → link into one idempotent run once wallets are funded.
+Notes: CLI validated end-to-end against a local chain (dev check, not a gate claim): 2 real commits verified green, a wrong-tree attestation flagged red MISMATCH, an absent commit flagged MISSING, exit 1 whenever any attestation is not green. Gate 4 itself runs against live Monad testnet after deploy. `scripts/chain-setup.sh` collapses deploy → verify → register → attest → link into one idempotent run once wallets are funded.
+
+Self-review (agents hit the session limit; done inline) — 3 real bugs found and fixed, each verified on a local chain:
+1. CLI exited 0 on a rewritten repo (missing attested commits = yellow). A commit hash binds its tree, so a force-push can only ever produce missing commits, never a tree mismatch — so the tool would have passed a cheater's rewritten repo. Now any non-green attestation exits non-zero; this also makes `negative-path-proof.sh` (force-push → non-zero) actually valid. (cli, DOCS §6)
+2. Bridge kept a failed delivery's ID recorded, so GitHub's redelivery was rejected as a duplicate and the commits were silently dropped — against the fail-loudly rule. Failed submissions now release the delivery ID for retry. (bridge)
+3. CLI scanned events from block 0; on Monad's 100-block getLogs cap that fans out into ~500k requests and hangs. Now floors the scan at the registration block via on-chain-timestamp binary search, overridable with `--from-block`. (cli)
 
 ### Gate 4
 
