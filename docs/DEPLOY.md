@@ -13,7 +13,16 @@ address feeds everything downstream.
   `eth_getLogs` at 100 blocks; the web indexer and CLI adapt to that, but for
   snappy proof pages use an Alchemy/QuickNode Monad endpoint as `RPC_URL`.
 
-Copy `.env.example` to `.env` at the repo root and fill it in.
+Copy `.env.example` to `.env` at the repo root and fill it in, then run the
+read-only preflight doctor — it validates tooling, env vars, RPC/chain, wallet
+funding, and (once deployed) the contract, and exits non-zero on any hard gap:
+
+```bash
+./scripts/preflight.sh
+```
+
+Resolve every `✗` before continuing. On a fresh setup the expected remaining
+failures are exactly the two unfunded wallets and the webhook secret.
 
 ## 1. Contract → Monad testnet
 
