@@ -235,12 +235,20 @@ for (const log of attLogs) {
 
 rmSync(workdir, { recursive: true, force: true });
 
+// Any attested commit the repo cannot reproduce — a substituted tree (red) or a
+// vanished commit from a rewritten history (yellow) — is a verification failure
+// and exits non-zero, so a judge or CI treats a tampered/rewritten repo as a
+// fail rather than a pass. An honest repo that never rewrites published history
+// stays all-green and exits 0. (A force-push cannot yield red: a commit hash
+// binds its tree, so a present commit's tree can never mismatch; the realistic
+// rewrite attack surfaces as missing commits, which is why yellow must fail.)
+const failed = red > 0 || yellow > 0;
 console.log(
   `\n${green} verified · ${yellow} missing · ${red} mismatched — ` +
     (red > 0
-      ? `${RED}verification FAILED${RESET}`
+      ? `${RED}verification FAILED — content substituted${RESET}`
       : yellow > 0
-        ? `${YELLOW}verification degraded (history rewritten)${RESET}`
+        ? `${RED}verification FAILED — history rewritten, attested commits missing${RESET}`
         : `${GREEN}verification PASSED${RESET}`)
 );
-process.exit(red > 0 ? 1 : 0);
+process.exit(failed ? 1 : 0);
