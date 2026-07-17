@@ -13,6 +13,7 @@ import {
   registryAbi,
   registryAddress,
 } from "./chain.js";
+import { normalizeGithubHttps } from "./repoUrl.js";
 
 export type Verdict = "verified" | "missing" | "mismatched";
 
@@ -94,9 +95,13 @@ export async function verifyProject(projectId: number): Promise<VerifyReport> {
   const repoUrl = (regLogs[0]?.args.repoUrl as string | undefined) ?? "";
   if (!repoUrl) throw new Error(`no ProjectRegistered event found for project ${projectId}`);
 
-  let cloneUrl = repoUrl;
-  if (!/^(https?|git|ssh):/.test(cloneUrl) && !cloneUrl.startsWith("git@")) {
-    cloneUrl = `https://${cloneUrl}`;
+  // Clone only over HTTPS from github.com. repoUrl is attacker-controllable (set
+  // by whoever registered the project), so cloning it verbatim would be an SSRF
+  // vector — a registrant could point the bridge at an internal host. Aletheia
+  // is GitHub-only by design, so anything else is rejected outright.
+  const cloneUrl = normalizeGithubHttps(repoUrl);
+  if (!cloneUrl) {
+    throw new Error(`refusing to clone non-github.com repo url: ${repoUrl}`);
   }
 
   const workdir = mkdtempSync(join(tmpdir(), `aletheia-verify-${projectId}-`));

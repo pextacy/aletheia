@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { keccak256, toBytes } from "viem";
 import { computeSignature, verifySignature } from "../src/hmac.ts";
+import { normalizeGithubHttps } from "../src/repoUrl.ts";
 
 // gitOidToBytes32/bytes32ToOid/repoHashOf live in chain.ts, which reads env at
 // import time; re-implement the pure conversions here to test the exact logic
@@ -84,4 +85,21 @@ test("repoHashOf: canonical path matches the known on-chain key", () => {
 
 test("repoHashOf: is case-insensitive on the repo path", () => {
   assert.equal(repoHashOf("Pextacy/Aletheia"), repoHashOf("pextacy/aletheia"));
+});
+
+test("normalizeGithubHttps: accepts github.com repos and strips .git/scheme/www", () => {
+  const want = "https://github.com/pextacy/aletheia";
+  assert.equal(normalizeGithubHttps("https://github.com/pextacy/aletheia"), want);
+  assert.equal(normalizeGithubHttps("github.com/pextacy/aletheia"), want);
+  assert.equal(normalizeGithubHttps("http://www.github.com/pextacy/aletheia.git"), want);
+  assert.equal(normalizeGithubHttps("https://github.com/pextacy/aletheia/"), want);
+});
+
+test("normalizeGithubHttps: rejects non-github hosts (SSRF guard)", () => {
+  assert.equal(normalizeGithubHttps("http://169.254.169.254/latest/meta-data"), null);
+  assert.equal(normalizeGithubHttps("https://gitlab.com/a/b"), null);
+  assert.equal(normalizeGithubHttps("https://evil.com/x/y"), null);
+  assert.equal(normalizeGithubHttps("file:///etc/passwd"), null);
+  assert.equal(normalizeGithubHttps("git@github.com:a/b.git"), null);
+  assert.equal(normalizeGithubHttps("https://github.com.evil.com/a/b"), null);
 });
