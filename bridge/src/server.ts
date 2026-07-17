@@ -14,6 +14,7 @@ import {
   recentSubmissions,
   recordDelivery,
   recordSubmission,
+  releaseDelivery,
   setWebhookSecret,
 } from "./db.js";
 import { env } from "./env.js";
@@ -126,6 +127,10 @@ export function buildServer() {
 
     const txHash = await txQueue.enqueue({ projectId, pairs: jobPairs, submissionIds });
     if (txHash === null) {
+      // The attestation never landed. Release the delivery ID so GitHub's
+      // redelivery (or a manual redeliver) reprocesses it instead of being
+      // rejected as a duplicate — the failed submission rows stay for /status.
+      releaseDelivery(deliveryId);
       return reply.status(502).send({ error: "attestation transaction failed; see /status" });
     }
     return reply.status(200).send({ txHash, commits: pairs.length });

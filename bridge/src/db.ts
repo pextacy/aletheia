@@ -53,6 +53,8 @@ const recentByProject = db.prepare(
   "SELECT * FROM submissions WHERE project_id=? ORDER BY id DESC LIMIT 50"
 );
 
+const deleteDeliveryStmt = db.prepare("DELETE FROM deliveries WHERE delivery_id = ?");
+
 /** Returns false if this delivery ID was already processed (replay). */
 export function recordDelivery(deliveryId: string, repo: string): boolean {
   try {
@@ -62,6 +64,17 @@ export function recordDelivery(deliveryId: string, repo: string): boolean {
     if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) return false;
     throw err;
   }
+}
+
+/**
+ * Release a delivery ID so a later redelivery reprocesses it. Called only after
+ * a definitive submission failure: the delivery was recorded on receipt (to
+ * dedupe concurrent redeliveries), but if the attestation never landed, keeping
+ * the record would make GitHub's retry look like a duplicate and silently drop
+ * the commits. The failed submission rows remain for the /status audit trail.
+ */
+export function releaseDelivery(deliveryId: string): void {
+  deleteDeliveryStmt.run(deliveryId);
 }
 
 export function recordSubmission(
