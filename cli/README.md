@@ -14,7 +14,7 @@ The CLI reads a project's `ProjectRegistered` and `Attested` events from the Ale
 
 No keys, no writes, no trust in Aletheia's own infrastructure — only Node ≥ 20, a system `git`, and an RPC endpoint. SHA-1 and SHA-256 repository object formats are both detected automatically.
 
-`--registry` defaults to the `ALETHEIA_REGISTRY` environment variable; `--rpc` defaults to the public Monad testnet RPC. `--repo` overrides the clone URL recorded on-chain (useful for mirrors).
+`--registry` defaults to the `ALETHEIA_REGISTRY` environment variable; `--rpc` defaults to the public Monad testnet RPC. `--repo` overrides the clone URL recorded on-chain (useful for mirrors). `--from-block` overrides the block the event scan starts at; by default the CLI derives it from the project's on-chain registration timestamp, so it never scans from genesis (which would fan out into far too many requests on an RPC that caps `eth_getLogs` to a small block range, such as Monad's public endpoint).
 
 ## What a verdict means
 

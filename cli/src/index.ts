@@ -38,11 +38,12 @@ interface Args {
   rpc: string;
   registry: Hex;
   repo?: string;
+  fromBlock?: bigint;
 }
 
 function usage(): never {
   console.error(
-    "Usage: aletheia-verify <projectId> [--rpc <url>] [--registry <address>] [--repo <clone-url>]"
+    "Usage: aletheia-verify <projectId> [--rpc <url>] [--registry <address>] [--repo <clone-url>] [--from-block <n>]"
   );
   process.exit(2);
 }
@@ -75,7 +76,35 @@ function parseArgs(argv: string[]): Args {
   };
   const repo = flags.get("repo");
   if (repo !== undefined) args.repo = repo;
+  const fromBlock = flags.get("from-block");
+  if (fromBlock !== undefined) {
+    if (!/^\d+$/.test(fromBlock)) usage();
+    args.fromBlock = BigInt(fromBlock);
+  }
   return args;
+}
+
+/**
+ * Binary-search for the earliest block whose timestamp is >= targetTs. Used to
+ * floor event scans at (approximately) the project's registration block instead
+ * of genesis — on an RPC that caps eth_getLogs to a small block range, scanning
+ * from block 0 would fan out into hundreds of thousands of requests. Costs
+ * ~log2(latest) getBlock calls (≈26 for a 45M-block chain).
+ */
+async function findBlockByTimestamp(
+  client: PublicClient,
+  targetTs: bigint,
+  latest: bigint
+): Promise<bigint> {
+  let lo = 0n;
+  let hi = latest;
+  while (lo < hi) {
+    const mid = (lo + hi) / 2n;
+    const block = await client.getBlock({ blockNumber: mid });
+    if (block.timestamp < targetTs) lo = mid + 1n;
+    else hi = mid;
+  }
+  return lo;
 }
 
 interface EventLog {
@@ -151,8 +180,19 @@ if (owner === "0x0000000000000000000000000000000000000000") {
 }
 
 const latest = await client.getBlockNumber();
-const regLogs = await getLogsBisect(client, registeredEvent, args.projectId, 0n, latest, args.registry);
-const attLogs = await getLogsBisect(client, attestedEvent, args.projectId, 0n, latest, args.registry);
+// Floor the scan at (roughly) the registration block. Without this, an RPC that
+// caps eth_getLogs to a small range (Monad's public RPC allows 100 blocks) would
+// bisect a 45M-block span into hundreds of thousands of requests. --from-block
+// overrides; otherwise derive it from the project's on-chain createdAt timestamp.
+let fromBlock: bigint;
+if (args.fromBlock !== undefined) {
+  fromBlock = args.fromBlock;
+} else {
+  const approx = await findBlockByTimestamp(client, createdAt, latest);
+  fromBlock = approx > 16n ? approx - 16n : 0n; // small margin for timestamp skew
+}
+const regLogs = await getLogsBisect(client, registeredEvent, args.projectId, fromBlock, latest, args.registry);
+const attLogs = await getLogsBisect(client, attestedEvent, args.projectId, fromBlock, latest, args.registry);
 
 const reg = regLogs[0]?.args as { repoUrl?: string; repoHash?: Hex } | undefined;
 const repoUrl = args.repo ?? reg?.repoUrl;
