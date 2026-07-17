@@ -155,10 +155,14 @@ Notes: proof page and landing rendered against the local validation chain (dev c
 
 Notes: CLI validated end-to-end against a local chain (dev check, not a gate claim): 2 real commits verified green, a wrong-tree attestation flagged red MISMATCH, an absent commit flagged MISSING, exit 1 whenever any attestation is not green. Gate 4 itself runs against live Monad testnet after deploy. `scripts/chain-setup.sh` collapses deploy → verify → register → attest → link into one idempotent run once wallets are funded.
 
-Self-review (agents hit the session limit; done inline) — 3 real bugs found and fixed, each verified on a local chain:
+Self-review (agents hit the session limit; done inline) — 7 real bugs found and fixed, each verified on a local chain:
 1. CLI exited 0 on a rewritten repo (missing attested commits = yellow). A commit hash binds its tree, so a force-push can only ever produce missing commits, never a tree mismatch — so the tool would have passed a cheater's rewritten repo. Now any non-green attestation exits non-zero; this also makes `negative-path-proof.sh` (force-push → non-zero) actually valid. (cli, DOCS §6)
-2. Bridge kept a failed delivery's ID recorded, so GitHub's redelivery was rejected as a duplicate and the commits were silently dropped — against the fail-loudly rule. Failed submissions now release the delivery ID for retry. (bridge)
+2. Bridge kept a failed delivery's ID recorded, so GitHub's redelivery was rejected as a duplicate and the commits were silently dropped — against the fail-loudly rule. A submission that was never submitted now releases the delivery ID for retry. (bridge)
 3. CLI scanned events from block 0; on Monad's 100-block getLogs cap that fans out into ~500k requests and hangs. Now floors the scan at the registration block via on-chain-timestamp binary search, overridable with `--from-block`. (cli)
+4. A new-branch push (`before` all-zeros) that was also truncated (>20 commits) fed 000…0 to the Compare API → 404 → 500, and the delivery was already recorded so the retry dropped. Now the zero base is detected and the head commit is attested. (bridge)
+5. The register flow matched a guessed, wrong error selector (real `RepoAlreadyRegistered` is `0xa525bbac`) and omitted the errors from the client ABI, so a duplicate registration showed a raw viem error instead of F1's clear message. Errors added to the ABI; correct selector matched. (web)
+6. `waitForTransactionReceipt` does not throw on a reverted tx, so a reverted attestation was recorded as `submitted` though no event was emitted; and releasing the delivery on any failure could double-attest if a submitted tx's receipt timed out but later confirmed. The queue now checks receipt status and only releases the delivery when nothing was submitted. (bridge)
+7. The bridge Dockerfile used `node:20-alpine` (musl); better-sqlite3 may find no matching prebuild and fall back to node-gyp, which needs a toolchain alpine lacks → `npm ci` fails. Switched to `node:20-slim` (glibc). (bridge)
 
 ### Gate 4
 
