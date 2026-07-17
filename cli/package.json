@@ -1,0 +1,33 @@
+{
+  "name": "aletheia-verify",
+  "version": "0.1.0",
+  "description": "Independently verify a project's on-chain build attestations against its Git repository",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsup",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "aletheia-verify": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pextacy/aletheia.git"
+  },
+  "dependencies": {
+    "viem": "^2.55.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2"
+  }
+}
