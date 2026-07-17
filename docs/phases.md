@@ -23,15 +23,15 @@ Status legend: `[ ]` not started · `[x]` done · strike-through = cut (record w
 - [x] Create **owner wallet** and **attestor wallet** (separate keys; attestor is low-privilege hot key)
 - [ ] Fund both from the Monad testnet faucet with generous margin
 - [x] Record wallet **addresses** (never keys) in `.env.example` comments
-- [ ] First commit and push to a public GitHub repo — small, atomic commits from here on; the log is part of the product (commit done; push pending GitHub auth)
+- [x] First commit and push to a public GitHub repo — small, atomic commits from here on; the log is part of the product
 
 ### Gate 0
 
-- [ ] Repo public on GitHub
+- [x] Repo public on GitHub — https://github.com/pextacy/aletheia
 - [ ] Both wallets funded (balance verified on explorer)
 - [x] `forge --version` and `node --version` run clean in the working environment
 
-Notes: forge 1.5.1-stable, node v25.2.1, git 2.52.0. Owner `0xA6b1F84D2fDF9DF0EB4CbA290ADF7e541e16fc04`, attestor `0x89da9812e7F12538119cc58E35bFc62270dDDcFD` — keys in local `.env` only. Faucet is captcha-gated (manual step); push pending `gh auth login`.
+Notes: forge 1.5.1-stable, node v25.2.1, git 2.52.0. Owner `0xA6b1F84D2fDF9DF0EB4CbA290ADF7e541e16fc04`, attestor `0x89da9812e7F12538119cc58E35bFc62270dDDcFD` — keys in local `.env` only. Faucet is captcha-gated, so funding is a manual browser step.
 
 ---
 
