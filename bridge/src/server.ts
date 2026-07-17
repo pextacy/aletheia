@@ -137,15 +137,21 @@ export function buildServer() {
       tree32: gitOidToBytes32(p.tree),
     }));
 
-    const txHash = await txQueue.enqueue({ projectId, pairs: jobPairs, submissionIds });
-    if (txHash === null) {
-      // The attestation never landed. Release the delivery ID so GitHub's
-      // redelivery (or a manual redeliver) reprocesses it instead of being
-      // rejected as a duplicate — the failed submission rows stay for /status.
-      releaseDelivery(deliveryId);
-      return reply.status(502).send({ error: "attestation transaction failed; see /status" });
+    const result = await txQueue.enqueue({ projectId, pairs: jobPairs, submissionIds });
+    if (!result.ok) {
+      // Only release the delivery when nothing was submitted (retryable) — then
+      // GitHub's redelivery reprocesses it instead of being rejected as a
+      // duplicate. If a tx exists but reverted or the receipt is unknown,
+      // retrying could double-attest, so the delivery stays recorded and the
+      // failure is surfaced via /status. Either way, never a silent success.
+      if (result.retryable) releaseDelivery(deliveryId);
+      return reply.status(502).send({
+        error: result.retryable
+          ? "attestation not submitted; retry the delivery — see /status"
+          : "attestation failed after submission; see /status before retrying",
+      });
     }
-    return reply.status(200).send({ txHash, commits: pairs.length });
+    return reply.status(200).send({ txHash: result.txHash, commits: pairs.length });
   });
 
   // Bind a per-project webhook secret. Only the on-chain project owner can do
