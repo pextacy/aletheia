@@ -16,7 +16,33 @@ Git history is author-controlled and trivially forgeable: `git commit --date` fa
 
 ## Status
 
-Phase 0 (foundation) in progress. See [docs/phases.md](docs/phases.md) for the live execution checklist.
+Phase 1 (contract) in progress. See [docs/phases.md](docs/phases.md) for the live execution checklist.
+
+## Registering a project from the command line
+
+The web landing page wraps these calls, but nothing about Aletheia requires it. This repository was registered as **project #1** with plain `cast`:
+
+```bash
+# repoHash = keccak256 of the lowercase canonical repo path
+cast keccak "github.com/pextacy/aletheia"
+# → 0xe4a131b80e2dfb2d9655fa864d4c7537e0e69bb4914f98ec8f2795588540f07a
+
+# register (owner key signs; attestor is the bridge hot wallet)
+cast send $REGISTRY_ADDRESS \
+  "registerProject(bytes32,string,address)" \
+  0xe4a131b80e2dfb2d9655fa864d4c7537e0e69bb4914f98ec8f2795588540f07a \
+  "https://github.com/pextacy/aletheia" \
+  0x89da9812e7F12538119cc58E35bFc62270dDDcFD \
+  --rpc-url $RPC_URL --private-key $OWNER_PRIVATE_KEY
+
+# attest the current HEAD manually (attestor key signs).
+# Git SHA-1 ids are 20 bytes, left-aligned and zero-padded into bytes32:
+COMMIT32=0x$(git rev-parse HEAD)000000000000000000000000
+TREE32=0x$(git rev-parse 'HEAD^{tree}')000000000000000000000000
+cast send $REGISTRY_ADDRESS \
+  "attest(uint256,bytes32,bytes32)" 1 $COMMIT32 $TREE32 \
+  --rpc-url $RPC_URL --private-key $ATTESTOR_PRIVATE_KEY
+```
 
 ## Roadmap
 
