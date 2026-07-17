@@ -1,5 +1,19 @@
-import { keccak256, toBytes, type AbiEvent } from "viem";
+import type { AbiEvent } from "viem";
 import { DEPLOY_BLOCK, REGISTRY_ADDRESS, events, publicClient, registryAbi } from "./chain";
+import { dbEnabled } from "./db";
+import {
+  neonFetchAllProjects,
+  neonFetchProject,
+  neonFetchRecentProjects,
+  neonLookupProjectByRepo,
+  neonRegistryStats,
+} from "./neon";
+import { bytes32ToOid, canonicalRepoPath, repoFullNameFromUrl, repoHashFromPath } from "./repo";
+import { buildDaySeries, dayOf } from "./time";
+
+// Re-export the pure repo helpers so existing importers keep working after the
+// move to ./repo.
+export { bytes32ToOid, canonicalRepoPath, repoHashFromPath };
 
 export interface AttestationEntry {
   kind: "attestation";
@@ -40,7 +54,7 @@ interface RawLog {
   transactionHash: string | null;
 }
 
-async function getLogsBisect(
+export async function getLogsBisect(
   event: AbiEvent,
   projectId: bigint | undefined,
   from: bigint,
@@ -67,18 +81,16 @@ async function getLogsBisect(
   }
 }
 
-/** bytes32 → git object id: SHA-1 ids are the first 20 bytes, zero-padded. */
-export function bytes32ToOid(value: string): string {
-  const hex = value.slice(2).toLowerCase();
-  return hex.endsWith("000000000000000000000000") ? hex.slice(0, 40) : hex;
-}
-
-function repoFullNameFromUrl(url: string): string | null {
-  const m = url.match(/github\.com\/([^/]+\/[^/#?]+)/i);
-  return m ? m[1]!.replace(/\.git$/, "") : null;
-}
 
 export async function fetchProject(projectId: number): Promise<ProjectModel | null> {
+  if (dbEnabled) {
+    try {
+      const fromDb = await neonFetchProject(projectId);
+      if (fromDb) return fromDb;
+    } catch {
+      // fall through to RPC on any Neon error
+    }
+  }
   const id = BigInt(projectId);
   const [owner, attestor, , createdAt, sealedAt] = await publicClient.readContract({
     address: REGISTRY_ADDRESS,
@@ -142,25 +154,6 @@ export interface RecentProject {
   timestamp: number;
 }
 
-/**
- * Reduce any GitHub URL to the canonical `github.com/owner/repo` path the
- * registry hashes. Must stay byte-identical to RegisterFlow's canonicalizer —
- * the repoHash is keccak256 over this exact string, so any divergence would
- * make a genuinely-registered repo look absent. Returns null when the input
- * isn't a recognizable GitHub repo URL.
- */
-export function canonicalRepoPath(url: string): string | null {
-  const m = url
-    .trim()
-    .match(/^(?:https?:\/\/)?(github\.com\/[^/]+\/[^/#?]+?)(?:\.git)?\/?$/i);
-  return m ? m[1]!.toLowerCase() : null;
-}
-
-/** keccak256 of the canonical repo path — the on-chain repoHash key. */
-export function repoHashFromPath(path: string): `0x${string}` {
-  return keccak256(toBytes(path));
-}
-
 export interface RepoLookup {
   /** Input reduced to `github.com/owner/repo`, or null if it wasn't a repo URL. */
   path: string | null;
@@ -178,6 +171,15 @@ export interface RepoLookup {
 export async function lookupProjectByRepo(url: string): Promise<RepoLookup> {
   const path = canonicalRepoPath(url);
   if (!path) return { path: null, repoHash: null, projectId: 0 };
+  if (dbEnabled) {
+    try {
+      const fromDb = await neonLookupProjectByRepo(url);
+      // A hit is authoritative; a miss may just be unsynced — fall through to RPC.
+      if (fromDb.projectId > 0) return fromDb;
+    } catch {
+      // fall through to RPC on any Neon error
+    }
+  }
   const repoHash = repoHashFromPath(path);
   const id = await publicClient.readContract({
     address: REGISTRY_ADDRESS,
@@ -189,6 +191,13 @@ export async function lookupProjectByRepo(url: string): Promise<RepoLookup> {
 }
 
 export async function fetchRecentProjects(limit = 12): Promise<RecentProject[]> {
+  if (dbEnabled) {
+    try {
+      return await neonFetchRecentProjects(limit);
+    } catch {
+      // fall through to RPC on any Neon error
+    }
+  }
   const latest = await publicClient.getBlockNumber();
   const logs = await getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest);
   return logs
@@ -214,6 +223,13 @@ export interface ExplorerProject extends RecentProject {
  * registration. Ordered newest first.
  */
 export async function fetchAllProjects(): Promise<ExplorerProject[]> {
+  if (dbEnabled) {
+    try {
+      return await neonFetchAllProjects();
+    } catch {
+      // fall through to RPC on any Neon error
+    }
+  }
   const latest = await publicClient.getBlockNumber();
   const logs = await getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest);
   const base = logs
@@ -240,4 +256,155 @@ export async function fetchAllProjects(): Promise<ExplorerProject[]> {
       }
     })
   );
+}
+
+// ── Registry-wide analytics ───────────────────────────────────────────────
+
+export interface DayPoint {
+  /** UTC calendar day, YYYY-MM-DD. */
+  day: string;
+  /** Attestations sealed that day. */
+  count: number;
+  /** Total projects registered up to and including that day. */
+  cumulativeProjects: number;
+}
+
+export interface LeaderProject {
+  projectId: number;
+  repoUrl: string;
+  attestations: number;
+  sealed: boolean;
+}
+
+export interface ActivityItem {
+  projectId: number;
+  repoUrl: string;
+  commitHash: string;
+  timestamp: number;
+  txHash: string;
+}
+
+export interface RegistryStats {
+  projectCount: number;
+  attestationCount: number;
+  sealedCount: number;
+  linkedContractCount: number;
+  uniqueOwners: number;
+  firstActivity: number | null;
+  lastActivity: number | null;
+  /** Continuous daily series from first to last activity (gaps filled, capped). */
+  series: DayPoint[];
+  /** Projects by attestation count, richest first. */
+  leaderboard: LeaderProject[];
+  /** Most recent attestations across every project, newest first. */
+  recent: ActivityItem[];
+}
+
+const EMPTY_STATS: RegistryStats = {
+  projectCount: 0,
+  attestationCount: 0,
+  sealedCount: 0,
+  linkedContractCount: 0,
+  uniqueOwners: 0,
+  firstActivity: null,
+  lastActivity: null,
+  series: [],
+  leaderboard: [],
+  recent: [],
+};
+
+/**
+ * One aggregate read of the whole registry: every ProjectRegistered, Attested,
+ * Sealed, and ContractLinked event is fetched once, then reduced into headline
+ * counts, a daily time-series, a leaderboard, and a recent-activity feed. All
+ * derived from chain logs — no mock data. Prefers the Neon index when
+ * configured; degrades to zeroed stats on error so the page renders.
+ */
+export async function fetchRegistryStats(): Promise<RegistryStats> {
+  if (dbEnabled) {
+    try {
+      return await neonRegistryStats();
+    } catch {
+      // fall through to RPC on any Neon error
+    }
+  }
+  try {
+    const latest = await publicClient.getBlockNumber();
+    const [regLogs, attLogs, sealLogs, linkLogs] = await Promise.all([
+      getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest),
+      getLogsBisect(events.attested, undefined, DEPLOY_BLOCK, latest),
+      getLogsBisect(events.sealed, undefined, DEPLOY_BLOCK, latest),
+      getLogsBisect(events.linked, undefined, DEPLOY_BLOCK, latest),
+    ]);
+
+    const repoUrlById = new Map<number, string>();
+    const owners = new Set<string>();
+    const registeredDays: { day: string; projectId: number }[] = [];
+    for (const l of regLogs) {
+      const id = Number(l.args.projectId as bigint);
+      repoUrlById.set(id, (l.args.repoUrl as string) ?? "");
+      owners.add((l.args.owner as string).toLowerCase());
+      registeredDays.push({ day: dayOf(Number(l.args.timestamp as bigint)), projectId: id });
+    }
+
+    const sealed = new Set<number>(sealLogs.map((l) => Number(l.args.projectId as bigint)));
+
+    const attestations = attLogs.map((l) => ({
+      projectId: Number(l.args.projectId as bigint),
+      commitHash: bytes32ToOid(l.args.commitHash as string),
+      timestamp: Number(l.args.timestamp as bigint),
+      txHash: l.transactionHash ?? "",
+    }));
+
+    // Headline timestamps span every event kind.
+    const allTimestamps = [
+      ...attestations.map((a) => a.timestamp),
+      ...registeredDays.map((r) => new Date(`${r.day}T00:00:00Z`).getTime() / 1000),
+    ];
+    const firstActivity = allTimestamps.length ? Math.min(...allTimestamps) : null;
+    const lastActivity = attestations.length
+      ? Math.max(...attestations.map((a) => a.timestamp))
+      : firstActivity;
+
+    // Per-day attestation counts and cumulative registrations.
+    const attByDay = new Map<string, number>();
+    for (const a of attestations) attByDay.set(dayOf(a.timestamp), (attByDay.get(dayOf(a.timestamp)) ?? 0) + 1);
+    const regByDay = new Map<string, number>();
+    for (const r of registeredDays) regByDay.set(r.day, (regByDay.get(r.day) ?? 0) + 1);
+
+    const series: DayPoint[] = buildDaySeries(attByDay, regByDay, firstActivity, lastActivity);
+
+    // Leaderboard by attestation count.
+    const countById = new Map<number, number>();
+    for (const a of attestations) countById.set(a.projectId, (countById.get(a.projectId) ?? 0) + 1);
+    const leaderboard: LeaderProject[] = [...countById.entries()]
+      .map(([projectId, attestationsN]) => ({
+        projectId,
+        repoUrl: repoUrlById.get(projectId) ?? "",
+        attestations: attestationsN,
+        sealed: sealed.has(projectId),
+      }))
+      .sort((a, b) => b.attestations - a.attestations || a.projectId - b.projectId);
+
+    const recent: ActivityItem[] = attestations
+      .slice()
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 12)
+      .map((a) => ({ ...a, repoUrl: repoUrlById.get(a.projectId) ?? "" }));
+
+    return {
+      projectCount: regLogs.length,
+      attestationCount: attestations.length,
+      sealedCount: sealed.size,
+      linkedContractCount: linkLogs.length,
+      uniqueOwners: owners.size,
+      firstActivity,
+      lastActivity,
+      series,
+      leaderboard,
+      recent,
+    };
+  } catch {
+    return EMPTY_STATS;
+  }
 }

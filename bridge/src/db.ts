@@ -17,6 +17,16 @@ export interface SubmissionRow {
 const db = new Database(env.DB_PATH);
 db.pragma("journal_mode = WAL");
 
+/** Flush WAL and close the database — called on graceful shutdown. */
+export function closeDb(): void {
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } catch {
+    // best-effort checkpoint; close regardless
+  }
+  db.close();
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS deliveries (
     delivery_id TEXT PRIMARY KEY,

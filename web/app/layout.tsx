@@ -3,10 +3,20 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: "Aletheia | Immutable build attestation",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "Aletheia | Immutable build attestation",
+    template: "%s",
+  },
   description:
     "Proof you built it, when you said you did. Every push sealed on Monad; verifiable by anyone.",
+  openGraph: {
+    siteName: "Aletheia",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

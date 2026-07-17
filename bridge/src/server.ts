@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import { formatEther, verifyMessage, type Hex } from "viem";
 import {
@@ -19,6 +18,7 @@ import {
 } from "./db.js";
 import { env } from "./env.js";
 import { fetchCompareRange, fetchTreeSha, type CommitPair } from "./github.js";
+import { verifySignature } from "./hmac.js";
 import { txQueue } from "./queue.js";
 import { getVerifyResult } from "./verifyService.js";
 
@@ -29,18 +29,6 @@ interface PushPayload {
   before?: string;
   after?: string;
   forced?: boolean;
-}
-
-function verifySignature(
-  rawBody: Buffer,
-  signatureHeader: string | undefined,
-  secret: string
-): boolean {
-  if (!signatureHeader?.startsWith("sha256=")) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
-  const got = Buffer.from(signatureHeader.slice("sha256=".length), "hex");
-  const want = Buffer.from(expected, "hex");
-  return got.length === want.length && timingSafeEqual(got, want);
 }
 
 const ZERO_SHA = /^0+$/;

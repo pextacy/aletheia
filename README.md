@@ -10,13 +10,24 @@ Git history is author-controlled and trivially forgeable: `git commit --date` fa
 |---|---|
 | `contracts/` | `AletheiaRegistry.sol` — Solidity registry, Foundry |
 | `bridge/` | Fastify webhook service: GitHub push → on-chain attestation |
-| `web/` | Next.js app: landing page + public proof pages (`/p/[projectId]`) |
+| `web/` | Next.js app: landing, proof pages (`/p/[projectId]`), registry (`/projects`), repo lookup (`/verify`) |
 | `cli/` | `aletheia-verify` — independent verification CLI (npx-runnable) |
-| `docs/` | PRD, technical documentation, execution plan |
+| `docs/` | PRD, technical docs, execution plan, and the [deployment guide](docs/DEPLOY.md) |
 
 ## Status
 
-Phase 1 (contract) in progress. See [docs/phases.md](docs/phases.md) for the live execution checklist.
+Code complete across all four components; deploying to Monad testnet + Railway + Vercel per [docs/DEPLOY.md](docs/DEPLOY.md). See [docs/phases.md](docs/phases.md) for the live execution checklist.
+
+## Develop & test
+
+```bash
+cd contracts && forge test          # 30 tests
+cd bridge && npm ci && npm test     # HMAC, hash-encoding, canonicalization units
+cd web && npm ci && npm run build   # typecheck + production build
+cd cli && npm ci && npm run build
+```
+
+CI runs all of the above on every push (`.github/workflows/ci.yml`).
 
 ## Registering a project from the command line
 
