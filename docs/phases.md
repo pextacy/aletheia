@@ -101,7 +101,7 @@ Notes:
 - [ ] Replayed delivery ⇒ zero duplicate events
 - [ ] From here on, every push to this repo self-attests automatically
 
-Notes:
+Notes: full pipeline validated against a local chain with simulated GitHub webhooks (dev check — the gate itself runs on live Monad after deploy): 2-commit push → `attestBatch` → exactly 2 `Attested` events; replayed delivery → `{"status":"duplicate"}`, no extra events; bad HMAC → 401; `ping` → 204; unregistered repo → 422; per-project secret binding accepted with owner signature and rejected with a wrong one; after binding, the old global secret is refused (401) and the new secret attests; `forced: true` persisted and exposed via `/status`.
 
 ---
 
@@ -132,7 +132,7 @@ Notes:
 - [ ] Project #1's page matches the explorer, link by link
 - [ ] Page renders fully with GitHub API disabled
 
-Notes:
+Notes: proof page and landing rendered against the local validation chain (dev check): `/p/1` returns 200 with the full timeline — attested commits with real GitHub commit messages (tokenless enrichment), on-chain badges, the bridge-sourced "history rewritten here" force-push marker, and the copyable verify command; `/` renders the register flow and recent-projects list from `ProjectRegistered` logs.
 
 ---
 
