@@ -24,11 +24,12 @@ function offsetFromStart(ts: number): string {
 export async function generateMetadata({
   params,
 }: {
-  params: { projectId: string };
+  params: Promise<{ projectId: string }>;
 }): Promise<Metadata> {
+  const { projectId } = await params;
   return {
-    title: `Aletheia | proof of project #${params.projectId}`,
-    openGraph: { images: [`/api/og/${params.projectId}`] },
+    title: `Aletheia | proof of project #${projectId}`,
+    openGraph: { images: [`/api/og/${projectId}`] },
   };
 }
 
@@ -255,8 +256,9 @@ function NodeRow({ node, index }: { node: TimelineNode; index: number }) {
   );
 }
 
-export default async function ProofPage({ params }: { params: { projectId: string } }) {
-  const id = Number(params.projectId);
+export default async function ProofPage({ params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params;
+  const id = Number(projectId);
   if (!Number.isInteger(id) || id < 1) notFound();
 
   const project = await fetchProject(id);

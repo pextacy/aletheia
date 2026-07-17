@@ -112,12 +112,13 @@ function ProjectCard({ p, i }: { p: ExplorerProject; i: number }) {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: { q?: string; status?: string };
+  searchParams: Promise<{ q?: string; status?: string }>;
 }) {
-  const q = (searchParams.q ?? "").trim();
+  const sp = await searchParams;
+  const q = (sp.q ?? "").trim();
   const status: Status =
-    searchParams.status === "sealed" || searchParams.status === "active"
-      ? searchParams.status
+    sp.status === "sealed" || sp.status === "active"
+      ? sp.status
       : "all";
 
   const all = await fetchAllProjects().catch(() => [] as ExplorerProject[]);

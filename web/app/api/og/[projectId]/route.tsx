@@ -13,8 +13,9 @@ const INK = "#e9def6";
 const MUTED = "#dcbed3";
 const OUTLINE = "#564051";
 
-export async function GET(_req: Request, { params }: { params: { projectId: string } }) {
-  const id = Number(params.projectId);
+export async function GET(_req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params;
+  const id = Number(projectId);
   const project = Number.isInteger(id) && id > 0 ? await fetchProject(id) : null;
 
   if (!project) {
@@ -35,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: { projectId: stri
           <div style={{ fontSize: 26, letterSpacing: 10, color: FUCHSIA_SOFT }}>ALETHEIA</div>
           <div style={{ fontSize: 56, fontWeight: 800, marginTop: 20 }}>No such project</div>
           <div style={{ fontSize: 26, marginTop: 12, color: MUTED }}>
-            #{params.projectId} is not registered on chain
+            #{projectId} is not registered on chain
           </div>
         </div>
       ),

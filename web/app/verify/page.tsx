@@ -203,9 +203,9 @@ async function Result({ raw }: { raw: string }) {
 export default async function VerifyPage({
   searchParams,
 }: {
-  searchParams: { repo?: string };
+  searchParams: Promise<{ repo?: string }>;
 }) {
-  const raw = (searchParams.repo ?? "").trim();
+  const raw = ((await searchParams).repo ?? "").trim();
 
   return (
     <div className="min-h-screen flex flex-col">
