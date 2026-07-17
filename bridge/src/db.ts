@@ -41,6 +41,12 @@ db.exec(`
     secret     TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS verifications (
+    project_id        INTEGER PRIMARY KEY,
+    attestation_count INTEGER NOT NULL,
+    report            TEXT NOT NULL,
+    verified_at       INTEGER NOT NULL
+  );
 `);
 
 const insertDelivery = db.prepare("INSERT INTO deliveries (delivery_id, repo) VALUES (?, ?)");
@@ -112,4 +118,33 @@ export function setWebhookSecret(projectId: number, secret: string): void {
 export function getWebhookSecret(projectId: number): string | null {
   const row = selectSecret.get(projectId) as { secret: string } | undefined;
   return row?.secret ?? null;
+}
+
+const upsertVerification = db.prepare(
+  "INSERT INTO verifications (project_id, attestation_count, report, verified_at) VALUES (?, ?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET attestation_count=excluded.attestation_count, report=excluded.report, verified_at=excluded.verified_at"
+);
+const selectVerification = db.prepare("SELECT * FROM verifications WHERE project_id=?");
+
+export interface CachedVerification {
+  attestationCount: number;
+  report: string;
+  verifiedAt: number;
+}
+
+export function saveVerification(
+  projectId: number,
+  attestationCount: number,
+  report: string,
+  verifiedAt: number
+): void {
+  upsertVerification.run(projectId, attestationCount, report, verifiedAt);
+}
+
+export function getVerification(projectId: number): CachedVerification | null {
+  const row = selectVerification.get(projectId) as
+    | { attestation_count: number; report: string; verified_at: number }
+    | undefined;
+  return row
+    ? { attestationCount: row.attestation_count, report: row.report, verifiedAt: row.verified_at }
+    : null;
 }

@@ -5,7 +5,9 @@ import {
   http,
   keccak256,
   parseAbi,
+  parseAbiItem,
   toBytes,
+  type AbiEvent,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -17,6 +19,13 @@ export const registryAbi = parseAbi([
   "function projectByRepo(bytes32 repoHash) view returns (uint256)",
   "function projects(uint256 projectId) view returns (address owner, address attestor, bytes32 repoHash, uint64 createdAt, uint64 sealedAt)",
 ]);
+
+export const registeredEvent = parseAbiItem(
+  "event ProjectRegistered(uint256 indexed projectId, address indexed owner, address attestor, bytes32 repoHash, string repoUrl, uint64 timestamp)"
+);
+export const attestedEvent = parseAbiItem(
+  "event Attested(uint256 indexed projectId, bytes32 indexed commitHash, bytes32 treeHash, uint64 timestamp)"
+);
 
 const chain = defineChain({
   id: Number(env.CHAIN_ID),
@@ -51,4 +60,59 @@ export async function lookupProjectId(repoFullName: string): Promise<bigint> {
     functionName: "projectByRepo",
     args: [repoHashOf(repoFullName)],
   });
+}
+
+/** bytes32 attestation value → git object id, per the repo's object format. */
+export function bytes32ToOid(value: Hex, objectFormat: "sha1" | "sha256"): string {
+  const hex = value.slice(2).toLowerCase();
+  return objectFormat === "sha1" ? hex.slice(0, 40) : hex;
+}
+
+interface RawLog {
+  args: Record<string, unknown>;
+  blockNumber: bigint | null;
+}
+
+/**
+ * getLogs over [from, to], bisecting on RPC range-limit errors so it works
+ * against any provider cap (Monad's public RPC allows 100 blocks).
+ */
+export async function getLogsBisect(
+  event: AbiEvent,
+  projectId: bigint,
+  from: bigint,
+  to: bigint,
+  depth = 0
+): Promise<RawLog[]> {
+  try {
+    const logs = await publicClient.getLogs({
+      address: registryAddress,
+      event,
+      args: { projectId } as never,
+      fromBlock: from,
+      toBlock: to,
+    });
+    return logs as unknown as RawLog[];
+  } catch (err) {
+    if (depth > 24 || to <= from) throw err;
+    const mid = from + (to - from) / 2n;
+    const [a, b] = await Promise.all([
+      getLogsBisect(event, projectId, from, mid, depth + 1),
+      getLogsBisect(event, projectId, mid + 1n, to, depth + 1),
+    ]);
+    return [...a, ...b];
+  }
+}
+
+/** Earliest block whose timestamp ≥ targetTs — floors event scans cheaply. */
+export async function findBlockByTimestamp(targetTs: bigint, latest: bigint): Promise<bigint> {
+  let lo = 0n;
+  let hi = latest;
+  while (lo < hi) {
+    const mid = (lo + hi) / 2n;
+    const block = await publicClient.getBlock({ blockNumber: mid });
+    if (block.timestamp < targetTs) lo = mid + 1n;
+    else hi = mid;
+  }
+  return lo;
 }

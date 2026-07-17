@@ -20,6 +20,7 @@ import {
 import { env } from "./env.js";
 import { fetchCompareRange, fetchTreeSha, type CommitPair } from "./github.js";
 import { txQueue } from "./queue.js";
+import { getVerifyResult } from "./verifyService.js";
 
 interface PushPayload {
   repository?: { full_name?: string };
@@ -230,6 +231,28 @@ export function buildServer() {
       return reply.status(422).send({ error: "invalid project id" });
     }
     return reply.send({ projectId: id, submissions: recentSubmissions(id) });
+  });
+
+  // Independent verification: clone the repo, recompute every commit + tree
+  // hash, and diff against the chain. Cached by attestation count so repeated
+  // views don't re-clone. Read-only; served to the web proof page and anyone.
+  app.get<{ Params: { projectId: string } }>("/verify/:projectId", async (req, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    const id = Number(req.params.projectId);
+    if (!Number.isInteger(id) || id < 1) {
+      return reply.status(422).send({ error: "invalid project id" });
+    }
+    try {
+      const { report, cached } = await getVerifyResult(id);
+      return reply.header("X-Aletheia-Cache", cached ? "hit" : "miss").send(report);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/does not exist/.test(msg)) {
+        return reply.status(404).send({ error: msg });
+      }
+      req.log.error({ projectId: id, err: msg }, "verification failed");
+      return reply.status(502).send({ error: `verification failed: ${msg}` });
+    }
   });
 
   return app;

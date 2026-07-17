@@ -4,6 +4,7 @@ import { SiteFooter, TopNav } from "../../../components/Chrome";
 import { EXPLORER_URL, HACKATHON_START, explorerAddress, explorerTx } from "../../../lib/chain";
 import { fetchCommitMeta, fetchForcedCommits } from "../../../lib/github";
 import { fetchProject, type ProjectModel } from "../../../lib/indexer";
+import { fetchVerification, verdictMap, type Verdict } from "../../../lib/verify";
 
 export const revalidate = 30;
 
@@ -53,10 +54,41 @@ const dateTone: Record<Tone, string> = {
   error: "text-error",
 };
 
+function VerifyBadge({ verdict }: { verdict: Verdict | undefined }) {
+  if (verdict === "verified") {
+    return (
+      <span className="ml-2 inline-flex items-center gap-1 text-secondary">
+        <span className="material-symbols-outlined ms-fill text-[14px]">verified</span>
+        tree verified
+      </span>
+    );
+  }
+  if (verdict === "mismatched") {
+    return (
+      <span className="ml-2 inline-flex items-center gap-1 text-error">
+        <span className="material-symbols-outlined ms-fill text-[14px]">cancel</span>
+        content substituted
+      </span>
+    );
+  }
+  if (verdict === "missing") {
+    return (
+      <span className="ml-2 inline-flex items-center gap-1 text-error">
+        <span className="material-symbols-outlined ms-fill text-[14px]">error</span>
+        commit missing
+      </span>
+    );
+  }
+  // No verification report available — the attestation exists on chain but
+  // hasn't been independently re-verified by the service.
+  return <span className="ml-2 text-green-500/80">✓ on-chain</span>;
+}
+
 function buildNodes(
   project: ProjectModel,
   meta: Map<string, { message: string; author: string }>,
-  forced: Set<string>
+  forced: Set<string>,
+  verdicts: Map<string, Verdict>
 ): TimelineNode[] {
   const nodes: TimelineNode[] = [];
 
@@ -106,10 +138,12 @@ function buildNodes(
           ),
         });
       } else {
+        const verdict = verdicts.get(entry.commitHash.toLowerCase());
+        const bad = verdict === "mismatched" || verdict === "missing";
         nodes.push({
           time: entry.timestamp,
-          tone: "fuchsia",
-          icon: "account_tree",
+          tone: bad ? "error" : "fuchsia",
+          icon: bad ? "gpp_bad" : "account_tree",
           title: m?.message ?? "Commit attested",
           card: (
             <>
@@ -122,6 +156,9 @@ function buildNodes(
                   tx ↗
                 </a>
               </div>
+              <p className="text-mono-data font-mono mt-2 text-outline">
+                <VerifyBadge verdict={verdict} />
+              </p>
             </>
           ),
         });
@@ -228,16 +265,18 @@ export default async function ProofPage({ params }: { params: { projectId: strin
   const commitShas = project.timeline
     .filter((e) => e.kind === "attestation")
     .map((e) => (e.kind === "attestation" ? e.commitHash : ""));
-  const [meta, forced] = await Promise.all([
+  const [meta, forced, verification] = await Promise.all([
     project.repoFullName
       ? fetchCommitMeta(project.repoFullName, commitShas)
       : Promise.resolve(new Map<string, { message: string; author: string }>()),
     fetchForcedCommits(project.projectId),
+    fetchVerification(project.projectId),
   ]);
 
   const sealed = project.sealedAt !== null;
   const firstAttestation = project.timeline.find((e) => e.kind === "attestation");
-  const nodes = buildNodes(project, meta, forced);
+  const verdicts = verdictMap(verification);
+  const nodes = buildNodes(project, meta, forced, verdicts);
   const title = project.repoFullName ?? `Project #${project.projectId}`;
   const verifyCmd = `npx aletheia-verify ${project.projectId}`;
 
@@ -304,6 +343,41 @@ export default async function ProofPage({ params }: { params: { projectId: strin
             </div>
           </div>
         </header>
+
+        {/* Independent-verification banner */}
+        {verification && (
+          <div
+            className={`mb-12 rounded-xl border px-6 py-4 flex items-center gap-4 ${
+              verification.ok
+                ? "bg-secondary-container/10 border-secondary/40 bloom-cyan"
+                : "bg-error-container/20 border-error/50 bloom-error"
+            }`}
+          >
+            <span
+              className={`material-symbols-outlined ms-fill text-3xl ${
+                verification.ok ? "text-secondary" : "text-error"
+              }`}
+            >
+              {verification.ok ? "verified_user" : "gpp_bad"}
+            </span>
+            <div className="min-w-0">
+              <div
+                className={`font-display text-headline-lg-mobile ${
+                  verification.ok ? "text-secondary" : "text-error"
+                }`}
+              >
+                {verification.ok
+                  ? "Independently verified"
+                  : "Verification found unreproducible attestations"}
+              </div>
+              <p className="text-on-surface-variant text-body-md">
+                {verification.ok
+                  ? `All ${verification.summary.verified} attested commits reproduce their tree hashes from a fresh clone of the repository.`
+                  : `${verification.summary.verified} verified · ${verification.summary.missing} missing · ${verification.summary.mismatched} mismatched. Re-derived from a fresh clone — the chain and the repo disagree.`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Timeline */}
         <section className="relative py-8">
