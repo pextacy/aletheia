@@ -42,19 +42,31 @@ function verifySignature(
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
+const ZERO_SHA = /^0+$/;
+
 /** Commit/tree pairs for the push, falling back to the Compare API when GitHub truncated the list. */
 async function resolveCommitPairs(payload: PushPayload, repo: string): Promise<CommitPair[]> {
   const commits = payload.commits ?? [];
   const head = payload.head_commit;
 
   const truncated = head != null && !commits.some((c) => c.id === head.id);
-  if (truncated && payload.before && payload.after) {
-    return fetchCompareRange(repo, payload.before, payload.after);
+  // Compare needs a real base. On a new branch (or a first push to a ref)
+  // `before` is all-zeros — feeding that to /compare 404s, so only take the
+  // Compare path when the base is a real commit.
+  const hasBase = !!payload.before && !ZERO_SHA.test(payload.before);
+  if (truncated && hasBase && payload.after) {
+    return fetchCompareRange(repo, payload.before!, payload.after);
   }
 
   const pairs: CommitPair[] = [];
   for (const c of commits) {
     pairs.push({ commit: c.id, tree: c.tree_id ?? (await fetchTreeSha(repo, c.id)) });
+  }
+  // Truncated with no usable base (new branch >20 commits): we cannot recover
+  // the intermediate commits, but the head is the meaningful anchor — attest it
+  // rather than dropping the push or 404-ing on Compare.
+  if (head && !commits.some((c) => c.id === head.id)) {
+    pairs.push({ commit: head.id, tree: head.tree_id ?? (await fetchTreeSha(repo, head.id)) });
   }
   return pairs;
 }
