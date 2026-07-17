@@ -149,9 +149,11 @@ Notes:
   - [x] Verdict table: green (match) / yellow (commit missing — rewritten) / red (tree mismatch — substitution)
   - [x] Non-zero exit on any red; no writes, no keys; deps only Node ≥ 20 + system git
   - [x] SHA-1 and SHA-256 repo formats auto-detected
-- [ ] Negative-path proof: scratch repo → attest → force-push rewritten history → run CLI → capture red-verdict screenshot for README *(deferred: needs deployed registry)*
-- [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works *(deferred: publish after registry address is baked in as default)*
+- [ ] Negative-path proof: scratch repo → attest → force-push rewritten history → run CLI → capture red-verdict screenshot for README *(scripted in `scripts/negative-path-proof.sh`; run needs deployed registry)*
+- [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works *(package publish-ready — README, files allowlist, `npm pack` clean; needs `npm login`)*
 - [x] GitHub Action `aletheia.yml` written (skips gracefully without secrets) — [ ] green run on a scratch repo *(deferred: needs deployed registry)*
+
+Notes: CLI validated end-to-end against a local chain (dev check, not a gate claim): 2 real commits verified green, a wrong-tree attestation flagged red MISMATCH, an absent commit flagged yellow MISSING, exit code 1 on red. Gate 4 itself runs against live Monad testnet after deploy. `scripts/chain-setup.sh` collapses deploy → verify → register → attest → link into one idempotent run once wallets are funded.
 
 ### Gate 4
 
