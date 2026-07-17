@@ -201,3 +201,43 @@ export async function fetchRecentProjects(limit = 12): Promise<RecentProject[]> 
     .sort((a, b) => b.projectId - a.projectId)
     .slice(0, limit);
 }
+
+export interface ExplorerProject extends RecentProject {
+  /** Seal timestamp, or null while the record is still open. */
+  sealedAt: number | null;
+}
+
+/**
+ * Every registered project with its live sealed state. Repo/owner come from the
+ * ProjectRegistered logs; sealedAt is read per project from the `projects`
+ * struct (a cheap call each) so the list reflects seals that happened after
+ * registration. Ordered newest first.
+ */
+export async function fetchAllProjects(): Promise<ExplorerProject[]> {
+  const latest = await publicClient.getBlockNumber();
+  const logs = await getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest);
+  const base = logs
+    .map((l) => ({
+      projectId: Number(l.args.projectId as bigint),
+      repoUrl: l.args.repoUrl as string,
+      owner: l.args.owner as string,
+      timestamp: Number(l.args.timestamp as bigint),
+    }))
+    .sort((a, b) => b.projectId - a.projectId);
+
+  return Promise.all(
+    base.map(async (p) => {
+      try {
+        const [, , , , sealedAt] = await publicClient.readContract({
+          address: REGISTRY_ADDRESS,
+          abi: registryAbi,
+          functionName: "projects",
+          args: [BigInt(p.projectId)],
+        });
+        return { ...p, sealedAt: sealedAt > 0n ? Number(sealedAt) : null };
+      } catch {
+        return { ...p, sealedAt: null };
+      }
+    })
+  );
+}

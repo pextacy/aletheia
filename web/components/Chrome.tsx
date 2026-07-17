@@ -3,7 +3,7 @@ import { EXPLORER_URL } from "../lib/chain";
 
 const REPO_URL = "https://github.com/pextacy/aletheia";
 
-export function TopNav({ active }: { active?: "proofs" | "verify" }) {
+export function TopNav({ active }: { active?: "proofs" | "verify" | "projects" }) {
   return (
     <nav className="fixed top-0 w-full z-50 bg-surface-container-low/80 backdrop-blur-xl border-b border-outline-variant/20 shadow-[0_0_20px_rgba(255,13,245,0.1)]">
       <div className="flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 max-w-container-max mx-auto">
@@ -23,6 +23,16 @@ export function TopNav({ active }: { active?: "proofs" | "verify" }) {
             }
           >
             Proofs
+          </Link>
+          <Link
+            href="/projects"
+            className={
+              active === "projects"
+                ? "text-primary font-bold border-b-2 border-primary pb-1 text-body-md"
+                : "text-on-surface-variant hover:text-primary transition-colors text-body-md"
+            }
+          >
+            Projects
           </Link>
           <Link
             href="/verify"
