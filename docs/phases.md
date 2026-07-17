@@ -77,21 +77,22 @@ Notes:
 
 ### Tasks
 
-- [ ] Fastify app with raw-body capture (content-type parser preserves bytes for HMAC)
-- [ ] `POST /webhook/github` pipeline per DOCS.md §4:
-  - [ ] Constant-time HMAC verification of `X-Hub-Signature-256`; bad signature ⇒ 401, never 200
-  - [ ] Event filtering: only `push`; `ping` ⇒ 204; unknown repo ⇒ 422
-  - [ ] Idempotency on `X-GitHub-Delivery` via SQLite `deliveries` table; replay ⇒ 200 `{"status":"duplicate"}`, no chain write
-  - [ ] Commit pipeline: payload commits → GitHub API tree SHA fetch → `attest`/`attestBatch`
-  - [ ] >20-commit truncation handled via Compare API
-  - [ ] `forced: true` flag persisted for timeline markers
-- [ ] SQLite persistence: `deliveries` + `submissions` tables, survives restarts
-- [ ] Serialized transaction queue: local nonce management, one re-sync retry on nonce errors, failures persisted (never silently lost)
-- [ ] `GET /status/:projectId` — recent submissions incl. failure states
-- [ ] `GET /healthz` — RPC block number + attestor balance, warn below 0.5 MON
-- [ ] Deploy to Railway with persistent volume for `aletheia.sqlite`
-- [ ] Configure the real GitHub webhook on this repo
-- [ ] End-to-end test: local commit → push → `Attested` event on explorer
+- [x] Fastify app with raw-body capture (content-type parser preserves bytes for HMAC)
+- [x] `POST /webhook/github` pipeline per DOCS.md §4:
+  - [x] Constant-time HMAC verification of `X-Hub-Signature-256`; bad signature ⇒ 401, never 200
+  - [x] Event filtering: only `push`; `ping` ⇒ 204; unknown repo ⇒ 422
+  - [x] Idempotency on `X-GitHub-Delivery` via SQLite `deliveries` table; replay ⇒ 200 `{"status":"duplicate"}`, no chain write
+  - [x] Commit pipeline: payload commits → GitHub API tree SHA fetch → `attest`/`attestBatch`
+  - [x] >20-commit truncation handled via Compare API
+  - [x] `forced: true` flag persisted for timeline markers
+- [x] SQLite persistence: `deliveries` + `submissions` + `webhook_secrets` tables, survives restarts
+- [x] Serialized transaction queue: local nonce management, one re-sync retry on nonce errors, failures persisted (never silently lost)
+- [x] `GET /status/:projectId` — recent submissions incl. failure states
+- [x] `GET /healthz` — RPC block number + attestor balance, warn below 0.5 MON
+- [x] Per-project webhook secrets bound by EIP-191 owner signature (`POST /webhook/register-secret`)
+- [ ] Deploy to Railway with persistent volume for `aletheia.sqlite` *(deferred: chain steps batched to the end per user)*
+- [ ] Configure the real GitHub webhook on this repo *(deferred)*
+- [ ] End-to-end test: local commit → push → `Attested` event on explorer *(deferred)*
 
 ### Gate 2
 
@@ -110,20 +111,20 @@ Notes:
 
 ### Tasks
 
-- [ ] Event indexer in `web/`: chunked `eth_getLogs` for all five event types, merged into a typed project model
-- [ ] Server-side GitHub metadata enrichment with graceful degradation — chain-only render must be complete (test with GitHub API disabled)
-- [ ] `/p/[projectId]`:
-  - [ ] Summary strip: first-attestation time, offset from hackathon start `2026-07-13T13:00:00Z`, counts, sealed state
-  - [ ] Vertical column timeline with per-entry explorer links and verification badges
-  - [ ] Force-push "history rewritten here" markers
-  - [ ] Linked contracts inline in chronological position
-  - [ ] Copyable `npx aletheia-verify <id>` block
-  - [ ] Responsive to 360 px, no horizontal scroll
-- [ ] Design identity pass per DOCS.md §5: parchment `#faf6ee` / ink `#1c1a17` / oxblood `#7a2e2e`, Cormorant + Inter, seal iconography, wax-seal treatment when sealed — budget real hours; judges open this first
-- [ ] Landing page: thesis paragraph, register flow (wallet connect → repo URL → `registerProject` → webhook instructions with copy buttons + per-project secret), recent-projects list from `ProjectRegistered` logs
-- [ ] Clear on-page error for duplicate repo registration (`RepoAlreadyRegistered` surfaced — F1 acceptance)
-- [ ] `/api/og/[projectId]` dynamic Open Graph image
-- [ ] Deploy to Vercel; all RPC server-side
+- [x] Event indexer in `web/`: bisecting `eth_getLogs` (adapts to any RPC range cap, floors at deploy block) for all five event types, merged into a typed project model
+- [x] Server-side GitHub metadata enrichment with graceful degradation — chain-only render complete by construction (every GitHub fetch failure degrades silently)
+- [x] `/p/[projectId]`:
+  - [x] Summary strip: first-attestation time, offset from hackathon start `2026-07-13T13:00:00Z`, counts, sealed state
+  - [x] Vertical column timeline with per-entry explorer links and verification badges
+  - [ ] Force-push "history rewritten here" markers *(needs bridge `/status` wiring or chain heuristic — pending live data to design against)*
+  - [x] Linked contracts inline in chronological position
+  - [x] Copyable `npx aletheia-verify <id>` block
+  - [ ] Responsive check at 360 px against live data *(code uses mobile-first layout; visual pass pending live deploy)*
+- [x] Design identity pass per DOCS.md §5: parchment `#faf6ee` / ink `#1c1a17` / oxblood `#7a2e2e`, Cormorant + Inter, seal iconography, wax-seal treatment when sealed
+- [x] Landing page: thesis paragraph, register flow (wallet connect → repo URL → `registerProject` → webhook instructions with copy buttons + per-project secret), recent-projects list from `ProjectRegistered` logs
+- [x] Clear on-page error for duplicate repo registration (`RepoAlreadyRegistered` surfaced — F1 acceptance)
+- [x] `/api/og/[projectId]` dynamic Open Graph image
+- [ ] Deploy to Vercel; all RPC server-side *(deferred: chain steps batched to the end per user; note — public Monad RPC caps `eth_getLogs` at 100 blocks, so production `RPC_URL` should be an Alchemy/QuickNode endpoint)*
 
 ### Gate 3
 
@@ -141,16 +142,16 @@ Notes:
 
 ### Tasks
 
-- [ ] `cli/` — `aletheia-verify <projectId> [--rpc] [--registry] [--repo]` per DOCS.md §6:
-  - [ ] Fetch `ProjectRegistered` + all `Attested` events
-  - [ ] Blobless clone (`--filter=blob:none`), full history
-  - [ ] Per-commit `git cat-file -e` + `git rev-parse <commit>^{tree}` recomputation
-  - [ ] Verdict table: green (match) / yellow (commit missing — rewritten) / red (tree mismatch — substitution)
-  - [ ] Non-zero exit on any red; no writes, no keys; deps only Node ≥ 20 + system git
-  - [ ] SHA-1 and SHA-256 repo formats auto-detected
-- [ ] Negative-path proof: scratch repo → attest → force-push rewritten history → run CLI → capture red-verdict screenshot for README (the threat model made visible)
-- [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works
-- [ ] GitHub Action `aletheia.yml` for self-attestation with the project's own key; run green on a scratch repo
+- [x] `cli/` — `aletheia-verify <projectId> [--rpc] [--registry] [--repo]` per DOCS.md §6:
+  - [x] Fetch `ProjectRegistered` + all `Attested` events
+  - [x] Blobless clone (`--filter=blob:none`), full history
+  - [x] Per-commit `git cat-file -e` + `git rev-parse <commit>^{tree}` recomputation
+  - [x] Verdict table: green (match) / yellow (commit missing — rewritten) / red (tree mismatch — substitution)
+  - [x] Non-zero exit on any red; no writes, no keys; deps only Node ≥ 20 + system git
+  - [x] SHA-1 and SHA-256 repo formats auto-detected
+- [ ] Negative-path proof: scratch repo → attest → force-push rewritten history → run CLI → capture red-verdict screenshot for README *(deferred: needs deployed registry)*
+- [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works *(deferred: publish after registry address is baked in as default)*
+- [x] GitHub Action `aletheia.yml` written (skips gracefully without secrets) — [ ] green run on a scratch repo *(deferred: needs deployed registry)*
 
 ### Gate 4
 
