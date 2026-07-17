@@ -36,6 +36,11 @@ db.exec(`
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_submissions_project ON submissions(project_id, id DESC);
+  CREATE TABLE IF NOT EXISTS webhook_secrets (
+    project_id INTEGER PRIMARY KEY,
+    secret     TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 const insertDelivery = db.prepare("INSERT INTO deliveries (delivery_id, repo) VALUES (?, ?)");
@@ -80,4 +85,18 @@ export function markSubmissionsFailed(ids: number[], error: string): void {
 
 export function recentSubmissions(projectId: number): SubmissionRow[] {
   return recentByProject.all(projectId) as SubmissionRow[];
+}
+
+const upsertSecret = db.prepare(
+  "INSERT INTO webhook_secrets (project_id, secret) VALUES (?, ?) ON CONFLICT(project_id) DO UPDATE SET secret=excluded.secret, updated_at=datetime('now')"
+);
+const selectSecret = db.prepare("SELECT secret FROM webhook_secrets WHERE project_id=?");
+
+export function setWebhookSecret(projectId: number, secret: string): void {
+  upsertSecret.run(projectId, secret);
+}
+
+export function getWebhookSecret(projectId: number): string | null {
+  const row = selectSecret.get(projectId) as { secret: string } | undefined;
+  return row?.secret ?? null;
 }

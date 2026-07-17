@@ -1,8 +1,21 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
-import { formatEther } from "viem";
-import { account, gitOidToBytes32, lookupProjectId, publicClient } from "./chain.js";
-import { recentSubmissions, recordDelivery, recordSubmission } from "./db.js";
+import { formatEther, verifyMessage, type Hex } from "viem";
+import {
+  account,
+  gitOidToBytes32,
+  lookupProjectId,
+  publicClient,
+  registryAbi,
+  registryAddress,
+} from "./chain.js";
+import {
+  getWebhookSecret,
+  recentSubmissions,
+  recordDelivery,
+  recordSubmission,
+  setWebhookSecret,
+} from "./db.js";
 import { env } from "./env.js";
 import { fetchCompareRange, fetchTreeSha, type CommitPair } from "./github.js";
 import { txQueue } from "./queue.js";
@@ -16,9 +29,13 @@ interface PushPayload {
   forced?: boolean;
 }
 
-function verifySignature(rawBody: Buffer, signatureHeader: string | undefined): boolean {
+function verifySignature(
+  rawBody: Buffer,
+  signatureHeader: string | undefined,
+  secret: string
+): boolean {
   if (!signatureHeader?.startsWith("sha256=")) return false;
-  const expected = createHmac("sha256", env.GITHUB_WEBHOOK_SECRET).update(rawBody).digest("hex");
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
   const got = Buffer.from(signatureHeader.slice("sha256=".length), "hex");
   const want = Buffer.from(expected, "hex");
   return got.length === want.length && timingSafeEqual(got, want);
@@ -55,8 +72,22 @@ export function buildServer() {
     const event = req.headers["x-github-event"] as string | undefined;
     const deliveryId = req.headers["x-github-delivery"] as string | undefined;
 
-    if (!verifySignature(rawBody, signature)) {
-      req.log.warn({ deliveryId }, "webhook rejected: invalid HMAC signature");
+    // The payload is untrusted until the HMAC check below passes; it is parsed
+    // first only to learn which project's webhook secret applies.
+    let payload: PushPayload;
+    try {
+      payload = JSON.parse(rawBody.toString("utf8")) as PushPayload;
+    } catch {
+      return reply.status(422).send({ error: "invalid JSON payload" });
+    }
+
+    const repo = payload.repository?.full_name;
+    const projectId = repo ? await lookupProjectId(repo) : 0n;
+    const projectSecret = projectId > 0n ? getWebhookSecret(Number(projectId)) : null;
+    const secret = projectSecret ?? env.GITHUB_WEBHOOK_SECRET;
+
+    if (!verifySignature(rawBody, signature, secret)) {
+      req.log.warn({ deliveryId, repo }, "webhook rejected: invalid HMAC signature");
       return reply.status(401).send({ error: "invalid signature" });
     }
     if (event === "ping") return reply.status(204).send();
@@ -67,18 +98,7 @@ export function buildServer() {
     if (!deliveryId) {
       return reply.status(422).send({ error: "missing X-GitHub-Delivery" });
     }
-
-    let payload: PushPayload;
-    try {
-      payload = JSON.parse(rawBody.toString("utf8")) as PushPayload;
-    } catch {
-      return reply.status(422).send({ error: "invalid JSON payload" });
-    }
-
-    const repo = payload.repository?.full_name;
     if (!repo) return reply.status(422).send({ error: "missing repository.full_name" });
-
-    const projectId = await lookupProjectId(repo);
     if (projectId === 0n) {
       req.log.warn({ repo, deliveryId }, "webhook rejected: repo not registered");
       return reply.status(422).send({ error: `repo not registered: ${repo}` });
@@ -109,6 +129,61 @@ export function buildServer() {
       return reply.status(502).send({ error: "attestation transaction failed; see /status" });
     }
     return reply.status(200).send({ txHash, commits: pairs.length });
+  });
+
+  // Bind a per-project webhook secret. Only the on-chain project owner can do
+  // this: the secret must arrive with an EIP-191 signature over
+  // "aletheia-webhook-secret:<projectId>:<secret>" from the owner key.
+  app.post("/webhook/register-secret", async (req, reply) => {
+    reply.header("Access-Control-Allow-Origin", "*");
+    let body: { projectId?: number; secret?: string; signature?: string };
+    try {
+      body = JSON.parse((req.body as Buffer).toString("utf8")) as typeof body;
+    } catch {
+      return reply.status(422).send({ error: "invalid JSON" });
+    }
+    const { projectId, secret, signature } = body;
+    if (
+      !Number.isInteger(projectId) ||
+      (projectId as number) < 1 ||
+      typeof secret !== "string" ||
+      !/^[0-9a-f]{64}$/.test(secret) ||
+      typeof signature !== "string"
+    ) {
+      return reply.status(422).send({ error: "expected {projectId, secret(64 hex), signature}" });
+    }
+
+    const [owner] = await publicClient.readContract({
+      address: registryAddress,
+      abi: registryAbi,
+      functionName: "projects",
+      args: [BigInt(projectId as number)],
+    });
+    if (owner === "0x0000000000000000000000000000000000000000") {
+      return reply.status(422).send({ error: "unknown project" });
+    }
+
+    const valid = await verifyMessage({
+      address: owner,
+      message: `aletheia-webhook-secret:${projectId}:${secret}`,
+      signature: signature as Hex,
+    });
+    if (!valid) {
+      req.log.warn({ projectId }, "register-secret rejected: bad owner signature");
+      return reply.status(401).send({ error: "signature does not match project owner" });
+    }
+
+    setWebhookSecret(projectId as number, secret);
+    return reply.send({ ok: true });
+  });
+
+  app.options("/webhook/register-secret", async (_req, reply) => {
+    return reply
+      .header("Access-Control-Allow-Origin", "*")
+      .header("Access-Control-Allow-Methods", "POST, OPTIONS")
+      .header("Access-Control-Allow-Headers", "Content-Type")
+      .status(204)
+      .send();
   });
 
   app.get("/healthz", async (_req, reply) => {

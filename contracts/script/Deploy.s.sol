@@ -21,6 +21,7 @@ contract Deploy is Script {
 
         string memory json = vm.serializeAddress("deployment", "registry", address(registry));
         json = vm.serializeUint("deployment", "chainId", block.chainid);
+        json = vm.serializeUint("deployment", "block", block.number);
         vm.writeJson(json, string.concat("../deployments/", vm.toString(block.chainid), ".json"));
     }
 }

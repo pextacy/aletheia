@@ -1,0 +1,63 @@
+# Aletheia self-attestation — the trustless ingestion path.
+#
+# Instead of (or alongside) Aletheia's webhook bridge, a project can attest its
+# own pushes with its own key, so nobody has to trust Aletheia's server. Copy
+# this file into .github/workflows/, then configure in your repo:
+#
+#   Secret  ALETHEIA_ATTESTOR_KEY  private key of the attestor registered for
+#                                  your project (a dedicated low-value hot key)
+#   Variable ALETHEIA_REGISTRY     AletheiaRegistry address
+#   Variable ALETHEIA_RPC          optional, defaults to the Monad testnet RPC
+#
+# The workflow no-ops (successfully) while the secret is absent, so merging
+# this file before registering is safe.
+name: aletheia
+on: [push]
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for attestor key
+        id: key
+        env:
+          KEY: ${{ secrets.ALETHEIA_ATTESTOR_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "ALETHEIA_ATTESTOR_KEY not configured — skipping attestation."
+          fi
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        if: steps.key.outputs.skip != 'true'
+
+      - name: Attest pushed head on-chain
+        if: steps.key.outputs.skip != 'true'
+        env:
+          KEY: ${{ secrets.ALETHEIA_ATTESTOR_KEY }}
+          REGISTRY: ${{ vars.ALETHEIA_REGISTRY }}
+          RPC: ${{ vars.ALETHEIA_RPC != '' && vars.ALETHEIA_RPC || 'https://testnet-rpc.monad.xyz' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REGISTRY" ]; then
+            echo "::error::ALETHEIA_REGISTRY repository variable is not set"; exit 1
+          fi
+
+          REPO_HASH=$(cast keccak "github.com/${GITHUB_REPOSITORY@L}")
+          PROJECT_ID=$(cast call "$REGISTRY" "projectByRepo(bytes32)(uint256)" "$REPO_HASH" --rpc-url "$RPC")
+          if [ "$PROJECT_ID" = "0" ]; then
+            echo "::error::repo is not registered on the Aletheia registry"; exit 1
+          fi
+
+          COMMIT=$(git rev-parse HEAD)
+          TREE=$(git rev-parse 'HEAD^{tree}')
+          pad() { printf '%s' "$1"; n=$(( 64 - ${#1} )); [ "$n" -gt 0 ] && printf '0%.0s' $(seq 1 $n) || true; }
+          COMMIT32=0x$(pad "$COMMIT")
+          TREE32=0x$(pad "$TREE")
+
+          echo "attesting project #$PROJECT_ID commit $COMMIT"
+          cast send "$REGISTRY" "attest(uint256,bytes32,bytes32)" \
+            "$PROJECT_ID" "$COMMIT32" "$TREE32" \
+            --rpc-url "$RPC" --private-key "$KEY"
