@@ -41,25 +41,25 @@ Notes: forge 1.5.1-stable, node v25.2.1, git 2.52.0. Owner `0xA6b1F84D2fDF9DF0EB
 
 ### Tasks
 
-- [ ] `AletheiaRegistry.sol` per DOCS.md §3:
-  - [ ] Storage: `Project` struct, `projects`, `projectByRepo`, `projectCount`
-  - [ ] Errors (6): `RepoAlreadyRegistered`, `UnknownProject`, `NotOwner`, `NotAttestor`, `ProjectSealed`, `BadInput`
-  - [ ] Events (5): `ProjectRegistered`, `Attested`, `ContractLinked`, `AttestorChanged`, `Sealed`
-  - [ ] Functions: `registerProject`, `attest`, `attestBatch`, `linkContract`, `setAttestor`, `seal`
-  - [ ] SHA-1 (left-aligned, zero-padded) and SHA-256 hash encodings both accepted as `bytes32`
-- [ ] Foundry test suite per DOCS.md §3.5:
-  - [ ] Registration uniqueness (`RepoAlreadyRegistered`)
-  - [ ] Attestor-only `attest`/`attestBatch`; owner-only `linkContract`/`setAttestor`/`seal`
-  - [ ] Batch length mismatch and empty-array reverts (`BadInput`)
-  - [ ] Seal blocks **every** mutating path (explicit test per function)
-  - [ ] Attestor rotation
-  - [ ] Event assertions via `vm.expectEmit` for all five events
-  - [ ] Fuzz test on batch sizes
-  - [ ] Full lifecycle: register → attest ×N → link → seal → all mutations revert
-- [ ] `script/Deploy.s.sol` with chain-ID assertion (`10143`)
+- [x] `AletheiaRegistry.sol` per DOCS.md §3:
+  - [x] Storage: `Project` struct, `projects`, `projectByRepo`, `projectCount`
+  - [x] Errors (6): `RepoAlreadyRegistered`, `UnknownProject`, `NotOwner`, `NotAttestor`, `ProjectSealed`, `BadInput`
+  - [x] Events (5): `ProjectRegistered`, `Attested`, `ContractLinked`, `AttestorChanged`, `Sealed`
+  - [x] Functions: `registerProject`, `attest`, `attestBatch`, `linkContract`, `setAttestor`, `seal`
+  - [x] SHA-1 (left-aligned, zero-padded) and SHA-256 hash encodings both accepted as `bytes32`
+- [x] Foundry test suite per DOCS.md §3.5 (30 tests, all green):
+  - [x] Registration uniqueness (`RepoAlreadyRegistered`)
+  - [x] Attestor-only `attest`/`attestBatch`; owner-only `linkContract`/`setAttestor`/`seal`
+  - [x] Batch length mismatch and empty-array reverts (`BadInput`)
+  - [x] Seal blocks **every** mutating path (explicit test per function)
+  - [x] Attestor rotation
+  - [x] Event assertions via `vm.expectEmit` for all five events
+  - [x] Fuzz test on batch sizes
+  - [x] Full lifecycle: register → attest ×N → link → seal → all mutations revert
+- [x] `script/Deploy.s.sol` with chain-ID assertion (`10143`)
 - [ ] Deploy to Monad testnet; verify source on explorer
 - [ ] Write `deployments/10143.json` (read by bridge and web at build time)
-- [ ] **Dogfooding start (F8):** register this repo as project #1 via `cast send` (command documented in README) and submit a manual attestation of current HEAD (commit + tree hash) with the attestor key
+- [ ] **Dogfooding start (F8):** register this repo as project #1 via `cast send` (command documented in README ✓) and submit a manual attestation of current HEAD (commit + tree hash) with the attestor key
 
 ### Gate 1
 
