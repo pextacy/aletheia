@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EXPLORER_URL, HACKATHON_START, explorerAddress, explorerTx } from "../../../lib/chain";
-import { fetchCommitMeta } from "../../../lib/github";
+import { fetchCommitMeta, fetchForcedCommits } from "../../../lib/github";
 import { fetchProject } from "../../../lib/indexer";
 
 export const revalidate = 30;
@@ -41,9 +41,12 @@ export default async function ProofPage({ params }: { params: { projectId: strin
   const commitShas = project.timeline
     .filter((e) => e.kind === "attestation")
     .map((e) => (e.kind === "attestation" ? e.commitHash : ""));
-  const meta = project.repoFullName
-    ? await fetchCommitMeta(project.repoFullName, commitShas)
-    : new Map();
+  const [meta, forced] = await Promise.all([
+    project.repoFullName
+      ? fetchCommitMeta(project.repoFullName, commitShas)
+      : Promise.resolve(new Map<string, never>()),
+    fetchForcedCommits(project.projectId),
+  ]);
 
   const sealed = project.sealedAt !== null;
   const firstAttestation = project.timeline.find((e) => e.kind === "attestation");
@@ -154,6 +157,11 @@ export default async function ProofPage({ params }: { params: { projectId: strin
                         view on explorer ↗
                       </a>
                       <span className="ml-2 text-green-800">✓ on-chain</span>
+                      {forced.has(entry.commitHash) && (
+                        <span className="ml-2 text-oxblood font-medium">
+                          ⚠ history rewritten here
+                        </span>
+                      )}
                     </p>
                   </>
                 ) : (

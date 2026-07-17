@@ -116,7 +116,7 @@ Notes:
 - [x] `/p/[projectId]`:
   - [x] Summary strip: first-attestation time, offset from hackathon start `2026-07-13T13:00:00Z`, counts, sealed state
   - [x] Vertical column timeline with per-entry explorer links and verification badges
-  - [ ] Force-push "history rewritten here" markers *(needs bridge `/status` wiring or chain heuristic — pending live data to design against)*
+  - [x] Force-push "history rewritten here" markers (bridge `/status` enrichment, degrades gracefully)
   - [x] Linked contracts inline in chronological position
   - [x] Copyable `npx aletheia-verify <id>` block
   - [ ] Responsive check at 360 px against live data *(code uses mobile-first layout; visual pass pending live deploy)*
