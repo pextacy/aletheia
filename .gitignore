@@ -15,10 +15,6 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/**/dry-run/
 
-# Bridge runtime state
-*.sqlite
-*.sqlite-journal
-
 # OS / editor
 .DS_Store
 .vscode/

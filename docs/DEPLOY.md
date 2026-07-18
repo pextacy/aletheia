@@ -47,8 +47,7 @@ The bridge is a long-running Node service with a Dockerfile and `railway.json`
 (Dockerfile builder, `/healthz` healthcheck, restart-on-failure).
 
 1. New Railway service from this repo, **root directory `bridge`**.
-2. Add a **persistent volume** mounted at `/data`.
-3. Set env vars:
+2. Set env vars:
    | var | value |
    |---|---|
    | `CHAIN_ID` | `10143` |
@@ -57,11 +56,11 @@ The bridge is a long-running Node service with a Dockerfile and `railway.json`
    | `ATTESTOR_PRIVATE_KEY` | attestor hot key |
    | `GITHUB_WEBHOOK_SECRET` | `openssl rand -hex 32` (the default/global secret) |
    | `GITHUB_TOKEN` | read-only token (higher API limits) |
-   | `DB_PATH` | `/data/aletheia.sqlite` |
+   | `DATABASE_URL` | Neon Postgres connection string (pooled) |
    | `PORT` | `8787` |
-4. Deploy. Confirm `GET /healthz` returns `ok: true` and a non-zero attestor
+3. Deploy. Confirm `GET /healthz` returns `ok: true` and a non-zero attestor
    balance.
-5. On this repo, add the GitHub webhook: **Settings → Webhooks → Add webhook**,
+4. On this repo, add the GitHub webhook: **Settings → Webhooks → Add webhook**,
    Payload URL `https://<service>.up.railway.app/webhook/github`, content type
    `application/json`, secret = `GITHUB_WEBHOOK_SECRET`, event = *just the push
    event*. (Per-project secrets registered from the web landing page override the
@@ -104,13 +103,14 @@ default registry is baked into the CLI, the flag becomes optional.
 ## Optional: Neon read-index (faster pages)
 
 The web app can index registry events into Neon Postgres so pages don't re-scan
-the chain over RPC on every request. It is **entirely optional** — with
+the chain over RPC on every request. It is **optional for the web** — with
 `DATABASE_URL` unset the app runs purely on RPC, and even when set, any index
-miss or error falls back to RPC transparently.
+miss or error falls back to RPC transparently. (The bridge, by contrast,
+requires `DATABASE_URL` — you already created the Neon database in step 2.)
 
 To enable:
 
-1. Create a Neon database; set `DATABASE_URL` (a `postgres://…` string) in the
+1. Set the same Neon `DATABASE_URL` (a `postgres://…` string) in the
    Vercel project.
 2. Set `SYNC_SECRET` to a random string — the `/api/sync` route requires it as
    `?token=` or a `Bearer` header. (If unset, the route is open; always set it

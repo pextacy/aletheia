@@ -59,7 +59,7 @@ Run `forge test` after every contract change and `tsc --noEmit` after every Type
 1. Only a project's registered attestor may call `attest`/`attestBatch` for that project; only the owner may call `linkContract`, `setAttestor`, and `seal`.
 2. A sealed project rejects all further attestations — test this explicitly.
 3. Bridge rejects any webhook whose HMAC signature fails, whose repository does not match a registered project, or whose event type is not `push`. Rejection is a 401/422 with a logged reason, never a 200.
-4. Bridge is idempotent: the same delivery ID (`X-GitHub-Delivery`) is never attested twice. Keep a persistent delivery-ID set (SQLite file) — process restarts must not cause double attestation.
+4. Bridge is idempotent: the same delivery ID (`X-GitHub-Delivery`) is never attested twice. Keep a persistent delivery-ID set (Neon Postgres) — process restarts must not cause double attestation.
 5. Attestation submission uses a single nonce-managed queue per attestor key; concurrent webhook deliveries must serialize, not race.
 
 ## Design identity (web)

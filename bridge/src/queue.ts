@@ -93,7 +93,7 @@ class TxQueue {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`attestation not submitted project=${job.projectId}: ${msg}`);
-      markSubmissionsFailed(job.submissionIds, `not submitted: ${msg}`);
+      await markSubmissionsFailed(job.submissionIds, `not submitted: ${msg}`);
       this.nonce = null; // resync before the next job — nonce state is unknown
       return { ok: false, retryable: true };
     }
@@ -103,17 +103,17 @@ class TxQueue {
     try {
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
       if (receipt.status === "success") {
-        markSubmissionsSubmitted(job.submissionIds, txHash);
+        await markSubmissionsSubmitted(job.submissionIds, txHash);
         return { ok: true, txHash };
       }
       console.error(`attestation reverted project=${job.projectId} tx=${txHash}`);
-      markSubmissionsFailed(job.submissionIds, `reverted: ${txHash}`);
+      await markSubmissionsFailed(job.submissionIds, `reverted: ${txHash}`);
       this.nonce = null;
       return { ok: false, retryable: false };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`attestation receipt unknown project=${job.projectId} tx=${txHash}: ${msg}`);
-      markSubmissionsFailed(job.submissionIds, `receipt unknown (tx ${txHash}): ${msg}`);
+      await markSubmissionsFailed(job.submissionIds, `receipt unknown (tx ${txHash}): ${msg}`);
       this.nonce = null;
       return { ok: false, retryable: false };
     }

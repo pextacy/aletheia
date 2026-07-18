@@ -22,7 +22,7 @@ Execution plan for the Spark build window. Now: 2026-07-17. Deadline: 2026-07-19
 ## Phase 2 — Bridge (Jul 17 evening → Jul 18 morning, ~5 h)
 
 1. Fastify app with raw-body capture; HMAC verification (constant-time), event filtering, `ping` handling.
-2. SQLite persistence (`deliveries`, `submissions` tables); idempotency on `X-GitHub-Delivery`.
+2. Neon Postgres persistence (`deliveries`, `submissions` tables); idempotency on `X-GitHub-Delivery`.
 3. Serialized transaction queue with local nonce management and one re-sync retry on nonce errors; failure states persisted and exposed at `GET /status/:projectId`.
 4. Commit pipeline: payload commits → GitHub API tree SHA fetch → truncation handling via Compare API when >20 commits → `attest`/`attestBatch` submission; force-push flag persisted.
 5. `GET /healthz` with RPC and attestor-balance checks.

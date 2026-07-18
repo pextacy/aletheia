@@ -39,6 +39,17 @@ req() { # name -> pass if set and not an INVALID placeholder
   esac
 }
 for v in CHAIN_ID RPC_URL EXPLORER_URL REGISTRY_ADDRESS ATTESTOR_PRIVATE_KEY GITHUB_WEBHOOK_SECRET; do req "$v"; done
+# The bridge stores deliveries/submissions/secrets/verifications in Neon Postgres.
+DB="${DATABASE_URL:-}"
+if [ -z "$DB" ]; then
+  fail "DATABASE_URL not set — bridge requires a Neon Postgres connection string"
+elif [[ "$DB" == *"ep-xxx"* ]] || [[ "$DB" == *INVALID* ]]; then
+  warn "DATABASE_URL is a placeholder"
+elif [[ "$DB" =~ ^postgres(ql)?:// ]]; then
+  green "DATABASE_URL set (postgres://)"
+else
+  fail "DATABASE_URL is not a postgres:// connection string"
+fi
 
 echo "── Chain"
 CHAIN_ID="${CHAIN_ID:-}"; RPC_URL="${RPC_URL:-}"

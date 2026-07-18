@@ -46,7 +46,7 @@ function nowSec(): number {
  */
 export async function getVerifyResult(projectId: number): Promise<VerifyResult> {
   const count = await countAttestations(projectId);
-  const cached = getVerification(projectId);
+  const cached = await getVerification(projectId);
   if (
     cached &&
     cached.attestationCount === count &&
@@ -62,7 +62,7 @@ export async function getVerifyResult(projectId: number): Promise<VerifyResult> 
       try {
         const report = await verifyProject(projectId);
         report.verifiedAt = nowSec();
-        saveVerification(
+        await saveVerification(
           projectId,
           report.attestationCount,
           JSON.stringify(report),

@@ -88,7 +88,7 @@ export function buildServer() {
 
     const repo = payload.repository?.full_name;
     const projectId = repo ? await lookupProjectId(repo) : 0n;
-    const projectSecret = projectId > 0n ? getWebhookSecret(Number(projectId)) : null;
+    const projectSecret = projectId > 0n ? await getWebhookSecret(Number(projectId)) : null;
     const secret = projectSecret ?? env.GITHUB_WEBHOOK_SECRET;
 
     if (!verifySignature(rawBody, signature, secret)) {
@@ -109,7 +109,7 @@ export function buildServer() {
       return reply.status(422).send({ error: `repo not registered: ${repo}` });
     }
 
-    if (!recordDelivery(deliveryId, repo)) {
+    if (!(await recordDelivery(deliveryId, repo))) {
       req.log.info({ deliveryId }, "duplicate delivery, skipping");
       return reply.status(200).send({ status: "duplicate" });
     }
@@ -121,9 +121,10 @@ export function buildServer() {
     }
 
     const forced = payload.forced === true;
-    const submissionIds = pairs.map((p) =>
-      recordSubmission(projectId, deliveryId, p.commit, p.tree, forced)
-    );
+    const submissionIds: number[] = [];
+    for (const p of pairs) {
+      submissionIds.push(await recordSubmission(projectId, deliveryId, p.commit, p.tree, forced));
+    }
     const jobPairs = pairs.map((p) => ({
       commit32: gitOidToBytes32(p.commit),
       tree32: gitOidToBytes32(p.tree),
@@ -136,7 +137,7 @@ export function buildServer() {
       // duplicate. If a tx exists but reverted or the receipt is unknown,
       // retrying could double-attest, so the delivery stays recorded and the
       // failure is surfaced via /status. Either way, never a silent success.
-      if (result.retryable) releaseDelivery(deliveryId);
+      if (result.retryable) await releaseDelivery(deliveryId);
       return reply.status(502).send({
         error: result.retryable
           ? "attestation not submitted; retry the delivery — see /status"
@@ -188,7 +189,7 @@ export function buildServer() {
       return reply.status(401).send({ error: "signature does not match project owner" });
     }
 
-    setWebhookSecret(projectId as number, secret);
+    await setWebhookSecret(projectId as number, secret);
     return reply.send({ ok: true });
   });
 
@@ -221,7 +222,7 @@ export function buildServer() {
     if (!Number.isInteger(id) || id < 1) {
       return reply.status(422).send({ error: "invalid project id" });
     }
-    return reply.send({ projectId: id, submissions: recentSubmissions(id) });
+    return reply.send({ projectId: id, submissions: await recentSubmissions(id) });
   });
 
   // Independent verification: clone the repo, recompute every commit + tree

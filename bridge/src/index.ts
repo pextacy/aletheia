@@ -1,6 +1,6 @@
 import { env } from "./env.js";
 import { publicClient } from "./chain.js";
-import { closeDb } from "./db.js";
+import { closeDb, ensureDb } from "./db.js";
 import { buildServer } from "./server.js";
 
 // Safety net: an isolated failure (a bad repo clone, an RPC blip) must never
@@ -17,12 +17,15 @@ if (chainId !== Number(env.CHAIN_ID)) {
   throw new Error(`RPC chain id ${chainId} does not match CHAIN_ID env ${env.CHAIN_ID}`);
 }
 
+// Fail fast if Neon is unreachable or the schema can't be created.
+await ensureDb();
+
 const app = buildServer();
 await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
 // Graceful shutdown: on a platform restart/deploy (SIGTERM) or Ctrl-C (SIGINT),
-// stop accepting connections, drain in-flight requests, and checkpoint+close
-// the SQLite database so the WAL is flushed and never left mid-write.
+// stop accepting connections, drain in-flight requests, and close the Postgres
+// pool so no query is left mid-write.
 let shuttingDown = false;
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
@@ -36,19 +39,16 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     timer.unref();
     app
       .close()
+      .then(() => closeDb())
       .then(() => {
-        closeDb();
         console.log("shutdown complete");
         process.exit(0);
       })
       .catch((err) => {
         console.error("error during shutdown:", err);
-        try {
-          closeDb();
-        } catch {
-          // ignore
-        }
-        process.exit(1);
+        closeDb()
+          .catch(() => undefined)
+          .finally(() => process.exit(1));
       });
   });
 }

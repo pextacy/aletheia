@@ -17,7 +17,7 @@ Status legend: `[ ]` not started · `[x]` done · strike-through = cut (record w
 
 - [x] Monorepo skeleton: `contracts/`, `bridge/`, `web/`, `cli/`
 - [x] Root `README.md` skeleton with the one-paragraph thesis
-- [x] `.gitignore` (incl. `.env`, `aletheia.sqlite`, build outputs)
+- [x] `.gitignore` (incl. `.env`, build outputs)
 - [x] `.env.example` — every variable from CLAUDE.md §Chain configuration, each with a descriptive comment and an obviously-invalid example value
 - [x] MIT `LICENSE`
 - [x] Create **owner wallet** and **attestor wallet** (separate keys; attestor is low-privilege hot key)
@@ -81,16 +81,16 @@ Notes:
 - [x] `POST /webhook/github` pipeline per DOCS.md §4:
   - [x] Constant-time HMAC verification of `X-Hub-Signature-256`; bad signature ⇒ 401, never 200
   - [x] Event filtering: only `push`; `ping` ⇒ 204; unknown repo ⇒ 422
-  - [x] Idempotency on `X-GitHub-Delivery` via SQLite `deliveries` table; replay ⇒ 200 `{"status":"duplicate"}`, no chain write
+  - [x] Idempotency on `X-GitHub-Delivery` via Postgres `deliveries` table; replay ⇒ 200 `{"status":"duplicate"}`, no chain write
   - [x] Commit pipeline: payload commits → GitHub API tree SHA fetch → `attest`/`attestBatch`
   - [x] >20-commit truncation handled via Compare API
   - [x] `forced: true` flag persisted for timeline markers
-- [x] SQLite persistence: `deliveries` + `submissions` + `webhook_secrets` tables, survives restarts
+- [x] Neon Postgres persistence: `deliveries` + `submissions` + `webhook_secrets` tables, survives restarts
 - [x] Serialized transaction queue: local nonce management, one re-sync retry on nonce errors, failures persisted (never silently lost)
 - [x] `GET /status/:projectId` — recent submissions incl. failure states
 - [x] `GET /healthz` — RPC block number + attestor balance, warn below 0.5 MON
 - [x] Per-project webhook secrets bound by EIP-191 owner signature (`POST /webhook/register-secret`)
-- [ ] Deploy to Railway with persistent volume for `aletheia.sqlite` *(deferred: chain steps batched to the end per user)*
+- [ ] Deploy to Railway (state in Neon Postgres via `DATABASE_URL`, no volume) *(deferred: chain steps batched to the end per user)*
 - [ ] Configure the real GitHub webhook on this repo *(deferred)*
 - [ ] End-to-end test: local commit → push → `Attested` event on explorer *(deferred)*
 
@@ -162,7 +162,7 @@ Self-review (agents hit the session limit; done inline) — 7 real bugs found an
 4. A new-branch push (`before` all-zeros) that was also truncated (>20 commits) fed 000…0 to the Compare API → 404 → 500, and the delivery was already recorded so the retry dropped. Now the zero base is detected and the head commit is attested. (bridge)
 5. The register flow matched a guessed, wrong error selector (real `RepoAlreadyRegistered` is `0xa525bbac`) and omitted the errors from the client ABI, so a duplicate registration showed a raw viem error instead of F1's clear message. Errors added to the ABI; correct selector matched. (web)
 6. `waitForTransactionReceipt` does not throw on a reverted tx, so a reverted attestation was recorded as `submitted` though no event was emitted; and releasing the delivery on any failure could double-attest if a submitted tx's receipt timed out but later confirmed. The queue now checks receipt status and only releases the delivery when nothing was submitted. (bridge)
-7. The bridge Dockerfile used `node:20-alpine` (musl); better-sqlite3 may find no matching prebuild and fall back to node-gyp, which needs a toolchain alpine lacks → `npm ci` fails. Switched to `node:20-slim` (glibc). (bridge)
+7. The bridge Dockerfile used `node:20-alpine` (musl); better-sqlite3 may find no matching prebuild and fall back to node-gyp, which needs a toolchain alpine lacks → `npm ci` fails. Switched to `node:20-slim` (glibc). (bridge) *(moot since the later move to Neon Postgres)*
 
 ### Gate 4
 
