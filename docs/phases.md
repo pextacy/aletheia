@@ -150,7 +150,7 @@ Notes: proof page and landing rendered against the local validation chain (dev c
   - [x] Non-zero exit on any red; no writes, no keys; deps only Node ≥ 20 + system git
   - [x] SHA-1 and SHA-256 repo formats auto-detected
 - [x] Negative-path proof: scratch repo (`aletheia-negative-proof`, project #2) → attest → force-push rewritten history → CLI returns red MISSING and exit 1. Run exposed a real verification bypass, fixed in the same commit: `cat-file -e` on a blobless (promisor) clone lazily re-fetches force-push-orphaned objects from GitHub, so a rewritten history verified green; both CLI and bridge now check reachability via `rev-list --all` and set `GIT_NO_LAZY_FETCH=1`.
-- [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works *(package publish-ready — README, files allowlist, `npm pack` clean; needs `npm login`)*
+- [x] Publish `aletheia-verify` to npm (0.1.0, 13:50 UTC); cold `npx` run with empty cache: 15 verified, exit 0
 - [x] GitHub Action `aletheia.yml` written (skips gracefully without secrets) — [ ] green run on a scratch repo *(deferred: needs deployed registry)*
 
 Notes: CLI validated end-to-end against a local chain (dev check, not a gate claim): 2 real commits verified green, a wrong-tree attestation flagged red MISMATCH, an absent commit flagged MISSING, exit 1 whenever any attestation is not green. Gate 4 itself runs against live Monad testnet after deploy. `scripts/chain-setup.sh` collapses deploy → verify → register → attest → link into one idempotent run once wallets are funded.
@@ -166,8 +166,8 @@ Self-review (agents hit the session limit; done inline) — 7 real bugs found an
 
 ### Gate 4
 
-- [ ] `npx aletheia-verify 1` from a clean machine returns all green
-- [ ] The rigged repo returns red with non-zero exit
+- [x] `npx aletheia-verify 1` from a clean machine returns all green (15 verified · 0 missing · 0 mismatched)
+- [x] The rigged repo returns red with non-zero exit (project #2: MISSING, exit 1)
 
 Notes:
 
