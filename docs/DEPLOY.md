@@ -124,6 +124,42 @@ To enable:
    idempotently pulls new events since the last synced block.
 4. The `/stats` dashboard reads from the index when present.
 
+## Mainnet (chain 143) — running both chains together
+
+Every component is chain-parametric; "mainnet support" is an ops exercise, not
+a code change. One bridge/web instance serves one chain, so mainnet runs as a
+second set of instances next to the testnet ones:
+
+1. **Fund real wallets.** Send real MON on chain 143 to the owner (~0.3 MON
+   covers deploy + registration) and the attestor (per-push attestations,
+   ~50k gas each — top up to taste). Consider fresh keys for mainnet; the
+   registry is per-chain, so testnet state carries nothing over.
+2. **Deploy the contract:**
+   ```bash
+   CHAIN_ID=143 RPC_URL=https://rpc.monad.xyz \
+   EXPLORER_URL=https://monadexplorer.com ./scripts/chain-setup.sh
+   ```
+   Writes `deployments/143.json`; source verification runs on Sourcify as on
+   testnet.
+3. **Second bridge instance** (Render): deploy the same blueprint again as
+   `aletheia-bridge-mainnet` with `CHAIN_ID=143`, the mainnet RPC, the new
+   `REGISTRY_ADDRESS`, and — **required** — a *separate* Neon database in
+   `DATABASE_URL`: the bridge tables are not chain-scoped, so two chains must
+   never share one database.
+4. **Second web instance** (Vercel): new project from the same repo with the
+   143 env set (`CHAIN_ID`, `RPC_URL`, `EXPLORER_URL`, `REGISTRY_ADDRESS`,
+   `DEPLOY_BLOCK`, mainnet `NEXT_PUBLIC_BRIDGE_URL`, its own Neon
+   `DATABASE_URL` + `SYNC_SECRET`).
+5. **Webhooks**: a mainnet-registered repo points its webhook at the mainnet
+   bridge URL. The GitHub Action path works unchanged with
+   `ALETHEIA_REGISTRY` set to the mainnet address and `ALETHEIA_RPC` to
+   `https://rpc.monad.xyz`.
+6. **CLI**: pass the chain explicitly —
+   `npx aletheia-verify <id> --registry <mainnet address> --rpc https://rpc.monad.xyz`.
+
+Costs are real on mainnet: registration is one transaction, each push one
+attestation (~50k gas single, cheaper per commit in batches).
+
 ## Verification checklist
 
 - `GET /healthz` on the bridge is green; attestor balance > 0.5 MON.

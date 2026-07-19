@@ -2,6 +2,7 @@ import Link from "next/link";
 import RegisterFlow from "../components/RegisterFlow";
 import { SiteFooter, TopNav } from "../components/Chrome";
 import {
+  CHAIN_NAME,
   CHAIN_ID,
   EXPLORER_URL,
   REGISTRY_ADDRESS,
@@ -44,7 +45,7 @@ export default async function Landing() {
                 verified
               </span>
               <span className="text-secondary text-label-sm tracking-wider uppercase">
-                Live on Monad testnet · chain {CHAIN_ID}
+                Live on {CHAIN_NAME} · chain {CHAIN_ID}
               </span>
             </div>
             <h1 className="font-display text-[34px] leading-[1.1] sm:text-[40px] md:text-headline-xl mb-6">
@@ -360,7 +361,7 @@ export default async function Landing() {
                 },
                 {
                   q: "Which chain, and what does it cost?",
-                  a: `Monad testnet (chain ${CHAIN_ID}). Registration is a single transaction; each push is one attestation. No token, no payment, no mainnet in v1.`,
+                  a: `${CHAIN_NAME} (chain ${CHAIN_ID}). Registration is a single transaction; each push is one attestation. No token, no payment.`,
                 },
               ].map((f) => (
                 <details

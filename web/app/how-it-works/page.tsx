@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, TopNav } from "../../components/Chrome";
-import { CHAIN_ID, EXPLORER_URL, HACKATHON_START } from "../../lib/chain";
+import { CHAIN_ID, CHAIN_NAME, EXPLORER_URL, HACKATHON_START } from "../../lib/chain";
 
 // Pure static explainer — no chain reads, safe to prerender.
 export const dynamic = "force-static";
@@ -358,7 +358,7 @@ export default function HowItWorks() {
                     ))}
                   </div>
                   <p className="text-outline text-mono-data font-mono mt-4">
-                    Deployed on Monad testnet · chain {CHAIN_ID}
+                    Deployed on {CHAIN_NAME} · chain {CHAIN_ID}
                   </p>
                 </div>
               </div>

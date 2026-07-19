@@ -29,7 +29,12 @@ export const attestedEvent = parseAbiItem(
 
 const chain = defineChain({
   id: Number(env.CHAIN_ID),
-  name: Number(env.CHAIN_ID) === 10143 ? "Monad Testnet" : `Chain ${env.CHAIN_ID}`,
+  name:
+    Number(env.CHAIN_ID) === 10143
+      ? "Monad Testnet"
+      : Number(env.CHAIN_ID) === 143
+        ? "Monad Mainnet"
+        : `Chain ${env.CHAIN_ID}`,
   nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
   rpcUrls: { default: { http: [env.RPC_URL] } },
 });

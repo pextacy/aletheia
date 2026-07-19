@@ -142,7 +142,7 @@ Ideas deliberately out of v1 scope (see [docs/PRD.md](docs/PRD.md) §6), kept as
 - **GitLab / Bitbucket ingestion** and **multi-repo projects**.
 - **Org accounts** for hackathon organizers to pre-register cohorts.
 - **NFT completion badges** minted from sealed timelines.
-- **Mainnet deployment** with per-attestation fee economics.
+- **Mainnet deployment** — operationally ready today: every component is chain-parametric and [docs/DEPLOY.md §Mainnet](docs/DEPLOY.md#mainnet-chain-143--running-both-chains-together) documents running chain 143 alongside testnet; ships once the per-attestation fee economics are settled.
 - **Historical back-attestation is excluded by design forever** — Aletheia only ever attests the present; that asymmetry is the product.
 
 ## License

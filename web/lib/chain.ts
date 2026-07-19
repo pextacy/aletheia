@@ -49,9 +49,12 @@ export const events = {
   sealed: parseAbiItem("event Sealed(uint256 indexed projectId, uint64 timestamp)"),
 } as const;
 
+export const CHAIN_NAME =
+  CHAIN_ID === 10143 ? "Monad Testnet" : CHAIN_ID === 143 ? "Monad Mainnet" : `Chain ${CHAIN_ID}`;
+
 export const chain = defineChain({
   id: CHAIN_ID,
-  name: CHAIN_ID === 10143 ? "Monad Testnet" : `Chain ${CHAIN_ID}`,
+  name: CHAIN_NAME,
   nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
   rpcUrls: { default: { http: [RPC_URL] } },
 });
