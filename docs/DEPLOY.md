@@ -11,7 +11,9 @@ address feeds everything downstream.
 - Foundry (`forge`, `cast`), Node 20, and `git` installed locally.
 - A production RPC endpoint. The public `https://testnet-rpc.monad.xyz` caps
   `eth_getLogs` at 100 blocks; the web indexer and CLI adapt to that, but for
-  snappy proof pages use an Alchemy/QuickNode Monad endpoint as `RPC_URL`.
+  snappy proof pages use a wider-range endpoint as `RPC_URL`. The keyless
+  `https://monad-testnet.gateway.tenderly.co` gateway allows 1000-block ranges
+  and needs no account; Alchemy/QuickNode (API key) lift the cap further.
 
 Copy `.env.example` to `.env` at the repo root and fill it in, then run the
 read-only preflight doctor — it validates tooling, env vars, RPC/chain, wallet
