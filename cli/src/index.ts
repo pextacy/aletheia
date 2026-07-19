@@ -21,7 +21,11 @@ const RED = "\x1b[31m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
-const DEFAULT_RPC = "https://testnet-rpc.monad.xyz";
+// Keyless Tenderly gateway: allows 1000-block eth_getLogs windows (the official
+// endpoint caps at 100), 10x fewer requests for a full-history scan. The CLI
+// only reads — the gateway's missing eth_estimateGas doesn't matter here.
+// Override with --rpc.
+const DEFAULT_RPC = "https://monad-testnet.gateway.tenderly.co";
 
 const registryAbi = parseAbi([
   "function projects(uint256 projectId) view returns (address owner, address attestor, bytes32 repoHash, uint64 createdAt, uint64 sealedAt)",
@@ -75,6 +79,27 @@ interface EventLog {
  * Fetch logs over [from, to], bisecting on RPC range-limit errors so the CLI
  * works against providers with any block-range cap.
  */
+
+// Global cap on in-flight getLogs calls: full parallel bisection bursts into
+// rate limits, fully sequential walks take minutes on a 100-block cap. Four
+// concurrent windows is fast without tripping public-RPC throttles.
+const LOG_CONCURRENCY = 4;
+let inFlightLogs = 0;
+const logWaiters: Array<() => void> = [];
+async function logSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (inFlightLogs >= LOG_CONCURRENCY) {
+    await new Promise<void>((resolve) => logWaiters.push(resolve));
+  }
+  inFlightLogs++;
+  try {
+    return await fn();
+  } finally {
+    inFlightLogs--;
+    const next = logWaiters.shift();
+    if (next) next();
+  }
+}
+
 /** Rate-limit errors must back off and retry, never bisect — splitting on a
  * 429 degenerates into thousands of single-block requests that make the
  * throttling strictly worse. */
@@ -100,13 +125,15 @@ async function getLogsBisect(
   attempt = 0
 ): Promise<EventLog[]> {
   try {
-    const logs = await client.getLogs({
-      address: registry,
-      event,
-      args: { projectId } as never,
-      fromBlock: from,
-      toBlock: to,
-    });
+    const logs = await logSlot(() =>
+      client.getLogs({
+        address: registry,
+        event,
+        args: { projectId } as never,
+        fromBlock: from,
+        toBlock: to,
+      })
+    );
     return logs as unknown as EventLog[];
   } catch (err) {
     if (isRateLimit(err)) {
@@ -115,10 +142,12 @@ async function getLogsBisect(
       return getLogsBisect(client, event, projectId, from, to, registry, depth, attempt + 1);
     }
     if (depth > 24 || to <= from) throw err;
-    // sequential halves: parallel bisection bursts straight into rate limits
+    // parallel halves, bounded by the global logSlot semaphore
     const mid = from + (to - from) / 2n;
-    const a = await getLogsBisect(client, event, projectId, from, mid, registry, depth + 1);
-    const b = await getLogsBisect(client, event, projectId, mid + 1n, to, registry, depth + 1);
+    const [a, b] = await Promise.all([
+      getLogsBisect(client, event, projectId, from, mid, registry, depth + 1),
+      getLogsBisect(client, event, projectId, mid + 1n, to, registry, depth + 1),
+    ]);
     return [...a, ...b];
   }
 }

@@ -55,6 +55,27 @@ interface RawLog {
   transactionHash: string | null;
 }
 
+
+// Global cap on in-flight getLogs calls: full parallel bisection bursts into
+// rate limits, fully sequential walks take minutes on a 100-block cap. Four
+// concurrent windows is fast without tripping public-RPC throttles.
+const LOG_CONCURRENCY = 4;
+let inFlightLogs = 0;
+const logWaiters: Array<() => void> = [];
+async function logSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (inFlightLogs >= LOG_CONCURRENCY) {
+    await new Promise<void>((resolve) => logWaiters.push(resolve));
+  }
+  inFlightLogs++;
+  try {
+    return await fn();
+  } finally {
+    inFlightLogs--;
+    const next = logWaiters.shift();
+    if (next) next();
+  }
+}
+
 /** Rate-limit errors must back off and retry, never bisect — splitting on a
  * 429 degenerates into thousands of single-block requests that make the
  * throttling strictly worse. */
@@ -79,13 +100,15 @@ export async function getLogsBisect(
   attempt = 0
 ): Promise<RawLog[]> {
   try {
-    const logs = await cfg.client.getLogs({
-      address: cfg.registryAddress,
-      event,
-      args: (projectId === undefined ? undefined : { projectId }) as never,
-      fromBlock: from,
-      toBlock: to,
-    });
+    const logs = await logSlot(() =>
+      cfg.client.getLogs({
+        address: cfg.registryAddress,
+        event,
+        args: (projectId === undefined ? undefined : { projectId }) as never,
+        fromBlock: from,
+        toBlock: to,
+      })
+    );
     return logs as unknown as RawLog[];
   } catch (err) {
     if (isRateLimit(err)) {
@@ -94,10 +117,12 @@ export async function getLogsBisect(
       return getLogsBisect(cfg, event, projectId, from, to, depth, attempt + 1);
     }
     if (depth > 24 || to <= from) throw err;
-    // sequential halves: parallel bisection bursts straight into rate limits
+    // parallel halves, bounded by the global logSlot semaphore
     const mid = from + (to - from) / 2n;
-    const a = await getLogsBisect(cfg, event, projectId, from, mid, depth + 1);
-    const b = await getLogsBisect(cfg, event, projectId, mid + 1n, to, depth + 1);
+    const [a, b] = await Promise.all([
+      getLogsBisect(cfg, event, projectId, from, mid, depth + 1),
+      getLogsBisect(cfg, event, projectId, mid + 1n, to, depth + 1),
+    ]);
     return [...a, ...b];
   }
 }
