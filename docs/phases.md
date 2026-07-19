@@ -179,8 +179,8 @@ Notes:
 
 ### Tasks
 
-- [ ] **README final pass (morning):** thesis, architecture diagram, threat model incl. honest out-of-scope list, 3-minute quickstart, verify instructions, roadmap absorbing all cut ideas, screenshots
-- [ ] **Judging-agent mapping table** in README: each published agent check (start time, placeholder data, suspicious commits) paired with the Aletheia artifact that answers it
+- [x] **README final pass (morning):** thesis, architecture diagram, threat model incl. honest out-of-scope list, 3-minute quickstart, verify instructions, roadmap absorbing all cut ideas — [ ] screenshots (after web deploy)
+- [x] **Judging-agent mapping table** in README: each published agent check (start time, placeholder data, suspicious commits) paired with the Aletheia artifact that answers it
 - [ ] **Demo video (midday, ≤3 min, one unbroken recording):**
   - [ ] The asymmetry problem (20 s)
   - [ ] Live commit → push → on-chain seal → timeline update (90 s)
