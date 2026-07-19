@@ -91,15 +91,15 @@ Notes:
 - [x] `GET /healthz` — RPC block number + attestor balance, warn below 0.5 MON
 - [x] Per-project webhook secrets bound by EIP-191 owner signature (`POST /webhook/register-secret`)
 - [x] Deploy to Render (state in Neon Postgres via `DATABASE_URL`, no volume; keepalive workflow counters free-plan spin-down) — live at aletheia-bridge.onrender.com, /healthz green
-- [ ] Configure the real GitHub webhook on this repo *(deferred)*
-- [ ] End-to-end test: local commit → push → `Attested` event on explorer *(deferred)*
+- [x] Configure the real GitHub webhook on this repo (via API; push-only, HMAC-secured)
+- [x] End-to-end test: local commit → push → `Attested` event (13:10:46 push → 13:10:49 attested, ~3 s)
 
 ### Gate 2
 
-- [ ] Single-commit push ⇒ exactly 1 `Attested` event, <30 s
+- [x] Single-commit push ⇒ exactly 1 `Attested` event, <30 s (measured ~3 s)
 - [ ] Multi-commit push ⇒ exactly N events via `attestBatch`, <30 s
-- [ ] Replayed delivery ⇒ zero duplicate events
-- [ ] From here on, every push to this repo self-attests automatically
+- [x] Replayed delivery ⇒ zero duplicate events (redelivered a submitted delivery: 200 `{"status":"duplicate"}`, no tx)
+- [x] From here on, every push to this repo self-attests automatically (bridge is sole attestor; Action key removed after proving F3)
 
 Notes: full pipeline validated against a local chain with simulated GitHub webhooks (dev check — the gate itself runs on live Monad after deploy): 2-commit push → `attestBatch` → exactly 2 `Attested` events; replayed delivery → `{"status":"duplicate"}`, no extra events; bad HMAC → 401; `ping` → 204; unregistered repo → 422; per-project secret binding accepted with owner signature and rejected with a wrong one; after binding, the old global secret is refused (401) and the new secret attests; `forced: true` persisted and exposed via `/status`.
 
