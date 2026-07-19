@@ -50,8 +50,17 @@ async function findBlockByTimestamp(
   let hi = latest;
   while (lo < hi) {
     const mid = (lo + hi) / 2n;
-    const block = await client.getBlock({ blockNumber: mid });
-    if (block.timestamp < targetTs) lo = mid + 1n;
+    let ts: bigint;
+    try {
+      ts = (await client.getBlock({ blockNumber: mid })).timestamp;
+    } catch {
+      // Non-archive RPCs prune old blocks. A missing block is by definition
+      // older than anything we're searching for (registrations are queryable),
+      // so treat it as "before the target" and search upward.
+      lo = mid + 1n;
+      continue;
+    }
+    if (ts < targetTs) lo = mid + 1n;
     else hi = mid;
   }
   return lo;
@@ -96,7 +105,16 @@ async function getLogsBisect(
 }
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 256 * 1024 * 1024,
+    // The clone is blobless (promisor): plain object lookups would silently
+    // re-fetch force-push-orphaned objects from the server and make a rewritten
+    // history look intact. Never fetch during verification.
+    env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+  }).trim();
 }
 
 let args;
@@ -189,6 +207,12 @@ try {
 const repoDir = join(workdir, "repo");
 const objectFormat = git(repoDir, "rev-parse", "--show-object-format") as "sha1" | "sha256";
 
+// Reachability, not mere existence: GitHub keeps force-push-orphaned objects
+// fetchable by hash, and a promisor clone would lazily pull them in — so
+// `cat-file -e` alone certifies a rewritten history as intact. An attestation
+// only counts if the commit is still reachable from the repo's refs today.
+const reachable = new Set(git(repoDir, "rev-list", "--all").split("\n"));
+
 let green = 0;
 let yellow = 0;
 let red = 0;
@@ -203,14 +227,7 @@ for (const log of attLogs) {
   const attestedTree = bytes32ToOid(treeHash, objectFormat);
   const when = new Date(Number(timestamp) * 1000).toISOString();
 
-  let commitExists = true;
-  try {
-    git(repoDir, "cat-file", "-e", `${commit}^{commit}`);
-  } catch {
-    commitExists = false;
-  }
-
-  if (!commitExists) {
+  if (!reachable.has(commit)) {
     yellow++;
     console.log(`${YELLOW}● MISSING ${RESET} ${commit.slice(0, 12)}  attested ${when}  ${YELLOW}commit absent from repo — history rewritten after attestation${RESET}`);
     continue;

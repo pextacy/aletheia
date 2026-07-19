@@ -149,7 +149,7 @@ Notes: proof page and landing rendered against the local validation chain (dev c
   - [x] Verdict table: green (match) / yellow (commit missing — rewritten) / red (tree mismatch — substitution)
   - [x] Non-zero exit on any red; no writes, no keys; deps only Node ≥ 20 + system git
   - [x] SHA-1 and SHA-256 repo formats auto-detected
-- [ ] Negative-path proof: scratch repo → attest → force-push rewritten history → run CLI → capture red-verdict screenshot for README *(scripted in `scripts/negative-path-proof.sh`; run needs deployed registry)*
+- [x] Negative-path proof: scratch repo (`aletheia-negative-proof`, project #2) → attest → force-push rewritten history → CLI returns red MISSING and exit 1. Run exposed a real verification bypass, fixed in the same commit: `cat-file -e` on a blobless (promisor) clone lazily re-fetches force-push-orphaned objects from GitHub, so a rewritten history verified green; both CLI and bridge now check reachability via `rev-list --all` and set `GIT_NO_LAZY_FETCH=1`.
 - [ ] Publish `aletheia-verify` to npm; confirm cold `npx` run works *(package publish-ready — README, files allowlist, `npm pack` clean; needs `npm login`)*
 - [x] GitHub Action `aletheia.yml` written (skips gracefully without secrets) — [ ] green run on a scratch repo *(deferred: needs deployed registry)*
 

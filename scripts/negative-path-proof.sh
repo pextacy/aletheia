@@ -21,7 +21,7 @@ FULL_NAME_LC=$(printf '%s/%s' "$GH_USER" "$SCRATCH" | tr '[:upper:]' '[:lower:]'
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-echo "── creating scratch repo $GH_USER/$SCRATCH…"
+echo "── creating scratch repo $GH_USER/${SCRATCH}…"
 gh repo create "$SCRATCH" --public --clone=false
 git init -q -b main "$WORK/repo"
 cd "$WORK/repo"

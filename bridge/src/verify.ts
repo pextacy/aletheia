@@ -62,6 +62,11 @@ function git(cwd: string, ...args: string[]): string {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 120_000,
+    maxBuffer: 256 * 1024 * 1024,
+    // The clone is blobless (promisor): plain object lookups would silently
+    // re-fetch force-push-orphaned objects from the server and make a rewritten
+    // history look intact. Never fetch during verification.
+    env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
   }).trim();
 }
 
@@ -114,6 +119,12 @@ export async function verifyProject(projectId: number): Promise<VerifyReport> {
     const repoDir = join(workdir, "repo");
     const objectFormat = git(repoDir, "rev-parse", "--show-object-format") as "sha1" | "sha256";
 
+    // Reachability, not mere existence: GitHub keeps force-push-orphaned
+    // objects fetchable by hash, and a promisor clone would lazily pull them
+    // in — so `cat-file -e` alone certifies a rewritten history as intact. An
+    // attestation only counts if the commit is reachable from the refs today.
+    const reachable = new Set(git(repoDir, "rev-list", "--all").split("\n"));
+
     const entries: CommitVerdict[] = [];
     let verified = 0;
     let missing = 0;
@@ -126,14 +137,7 @@ export async function verifyProject(projectId: number): Promise<VerifyReport> {
       const commit = bytes32ToOid(commitHash, objectFormat);
       const attestedTree = bytes32ToOid(treeHash, objectFormat);
 
-      let present = true;
-      try {
-        git(repoDir, "cat-file", "-e", `${commit}^{commit}`);
-      } catch {
-        present = false;
-      }
-
-      if (!present) {
+      if (!reachable.has(commit)) {
         missing++;
         entries.push({ commit, attestedTree, actualTree: null, attestedAt, status: "missing" });
         continue;
