@@ -21,14 +21,14 @@ Status legend: `[ ]` not started · `[x]` done · strike-through = cut (record w
 - [x] `.env.example` — every variable from CLAUDE.md §Chain configuration, each with a descriptive comment and an obviously-invalid example value
 - [x] MIT `LICENSE`
 - [x] Create **owner wallet** and **attestor wallet** (separate keys; attestor is low-privilege hot key)
-- [ ] Fund both from the Monad testnet faucet with generous margin
+- [x] Fund both from the Monad testnet faucet with generous margin (5 MON each, Jul 19)
 - [x] Record wallet **addresses** (never keys) in `.env.example` comments
 - [x] First commit and push to a public GitHub repo — small, atomic commits from here on; the log is part of the product
 
 ### Gate 0
 
 - [x] Repo public on GitHub — https://github.com/pextacy/aletheia
-- [ ] Both wallets funded (balance verified on explorer)
+- [x] Both wallets funded (balance verified on explorer)
 - [x] `forge --version` and `node --version` run clean in the working environment
 
 Notes: forge 1.5.1-stable, node v25.2.1, git 2.52.0. Owner `0xA6b1F84D2fDF9DF0EB4CbA290ADF7e541e16fc04`, attestor `0x89da9812e7F12538119cc58E35bFc62270dDDcFD` — keys in local `.env` only. Faucet is captcha-gated, so funding is a manual browser step.
@@ -57,15 +57,15 @@ Notes: forge 1.5.1-stable, node v25.2.1, git 2.52.0. Owner `0xA6b1F84D2fDF9DF0EB
   - [x] Fuzz test on batch sizes
   - [x] Full lifecycle: register → attest ×N → link → seal → all mutations revert
 - [x] `script/Deploy.s.sol` with chain-ID assertion (`10143`)
-- [ ] Deploy to Monad testnet; verify source on explorer
-- [ ] Write `deployments/10143.json` (read by bridge and web at build time)
-- [ ] **Dogfooding start (F8):** register this repo as project #1 via `cast send` (command documented in README ✓) and submit a manual attestation of current HEAD (commit + tree hash) with the attestor key
+- [x] Deploy to Monad testnet; verify source on explorer — `0x80eDe1D4EEc7572F0a1c28e0A70bC4E4f06F1116`, Sourcify exact match
+- [x] Write `deployments/10143.json` (read by bridge and web at build time)
+- [x] **Dogfooding start (F8):** registered as project #1; HEAD `60bfeba` attested and registry contract linked to the timeline
 
 ### Gate 1
 
-- [ ] `forge test` all green, every revert path exercised
-- [ ] Contract source verified on the explorer
-- [ ] Project #1 registered with ≥1 `Attested` event visible in explorer logs
+- [x] `forge test` all green, every revert path exercised (30/30)
+- [x] Contract source verified on the explorer (Sourcify exact match)
+- [x] Project #1 registered with ≥1 `Attested` event visible in explorer logs; CLI verify from a fresh clone: 1 verified, PASSED
 
 Notes:
 

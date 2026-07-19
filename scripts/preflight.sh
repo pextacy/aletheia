@@ -69,7 +69,9 @@ if [ -n "${ATTESTOR_PRIVATE_KEY:-}" ] && [[ "$ATTESTOR_PRIVATE_KEY" == 0x* ]] &&
   ATT_ADDR=$(cast wallet address "$ATTESTOR_PRIVATE_KEY" 2>/dev/null || echo "")
   if [ -n "$ATT_ADDR" ]; then
     green "attestor key valid → $ATT_ADDR"
-    if [ -n "${NEXT_PUBLIC_ATTESTOR_ADDRESS:-}" ] && [ "${NEXT_PUBLIC_ATTESTOR_ADDRESS,,}" != "${ATT_ADDR,,}" ]; then
+    NPA_LC=$(printf '%s' "${NEXT_PUBLIC_ATTESTOR_ADDRESS:-}" | tr '[:upper:]' '[:lower:]')
+    ATT_LC=$(printf '%s' "$ATT_ADDR" | tr '[:upper:]' '[:lower:]')
+    if [ -n "$NPA_LC" ] && [ "$NPA_LC" != "$ATT_LC" ]; then
       warn "NEXT_PUBLIC_ATTESTOR_ADDRESS != the key's address (web will offer the wrong attestor)"
     fi
     if [ -n "$RPC_URL" ]; then

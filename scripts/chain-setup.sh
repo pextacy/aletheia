@@ -50,7 +50,7 @@ echo "── verifying source…"
 REPO_HASH=$(cast keccak "$REPO_PATH")
 PROJECT_ID=$(cast call "$REGISTRY" "projectByRepo(bytes32)(uint256)" "$REPO_HASH" --rpc-url "$RPC_URL")
 if [ "$PROJECT_ID" = "0" ]; then
-  echo "── registering $REPO_PATH…"
+  echo "── registering ${REPO_PATH}…"
   cast send "$REGISTRY" "registerProject(bytes32,string,address)" \
     "$REPO_HASH" "$REPO_URL" "$ATTESTOR_ADDR" \
     --rpc-url "$RPC_URL" --private-key "$OWNER_PRIVATE_KEY" >/dev/null
@@ -64,7 +64,7 @@ TREE=$(git rev-parse 'HEAD^{tree}')
 pad() { printf '%s' "$1"; local n=$(( 64 - ${#1} )); [ "$n" -gt 0 ] && printf '0%.0s' $(seq 1 $n) || true; }
 COMMIT32=0x$(pad "$COMMIT")
 TREE32=0x$(pad "$TREE")
-echo "── attesting HEAD $COMMIT…"
+echo "── attesting HEAD ${COMMIT}…"
 TX=$(cast send "$REGISTRY" "attest(uint256,bytes32,bytes32)" "$PROJECT_ID" "$COMMIT32" "$TREE32" \
   --rpc-url "$RPC_URL" --private-key "$ATTESTOR_PRIVATE_KEY" --json | python3 -c "import json,sys;print(json.load(sys.stdin)['transactionHash'])")
 echo "attested: $EXPLORER_URL/tx/$TX"
