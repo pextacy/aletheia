@@ -83,7 +83,11 @@ class TxQueue {
         txHash = await this.send(job);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (/nonce too low|replacement transaction underpriced|already known/i.test(msg)) {
+        // "invalid param(eter)s" covers RPCs (e.g. the Tenderly gateway) that
+        // reject eth_estimateGas outright when the explicit nonce is stale —
+        // estimation precedes signing, so nothing was broadcast and a resync
+        // retry is safe.
+        if (/nonce too low|replacement transaction underpriced|already known|invalid param/i.test(msg)) {
           await this.syncNonce();
           txHash = await this.send(job);
         } else {
