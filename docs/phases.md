@@ -97,7 +97,7 @@ Notes:
 ### Gate 2
 
 - [x] Single-commit push ⇒ exactly 1 `Attested` event, <30 s (measured ~3 s)
-- [ ] Multi-commit push ⇒ exactly N events via `attestBatch`, <30 s
+- [x] Multi-commit push ⇒ exactly N events via `attestBatch`, <30 s (2 commits, one tx `0xcb2562f6…`)
 - [x] Replayed delivery ⇒ zero duplicate events (redelivered a submitted delivery: 200 `{"status":"duplicate"}`, no tx)
 - [x] From here on, every push to this repo self-attests automatically (bridge is sole attestor; Action key removed after proving F3)
 
@@ -119,12 +119,12 @@ Notes: full pipeline validated against a local chain with simulated GitHub webho
   - [x] Force-push "history rewritten here" markers (bridge `/status` enrichment, degrades gracefully)
   - [x] Linked contracts inline in chronological position
   - [x] Copyable `npx aletheia-verify <id>` block
-  - [ ] Responsive check at 360 px against live data *(code uses mobile-first layout; visual pass pending live deploy)*
+  - [x] Responsive check at 360 px against live data (Playwright capture, no horizontal overflow)
 - [x] Design identity pass per DOCS.md §5: parchment `#faf6ee` / ink `#1c1a17` / oxblood `#7a2e2e`, Cormorant + Inter, seal iconography, wax-seal treatment when sealed
 - [x] Landing page: thesis paragraph, register flow (wallet connect → repo URL → `registerProject` → webhook instructions with copy buttons + per-project secret), recent-projects list from `ProjectRegistered` logs
 - [x] Clear on-page error for duplicate repo registration (`RepoAlreadyRegistered` surfaced — F1 acceptance)
 - [x] `/api/og/[projectId]` dynamic Open Graph image
-- [ ] Deploy to Vercel; all RPC server-side *(deferred: chain steps batched to the end per user; note — public Monad RPC caps `eth_getLogs` at 100 blocks, so production `RPC_URL` should be an Alchemy/QuickNode endpoint)*
+- [x] Deploy to Vercel; all RPC server-side — live at aletheia-two-tau.vercel.app (Tenderly gateway reads + Neon index)
 
 ### Gate 3
 
@@ -179,7 +179,7 @@ Notes:
 
 ### Tasks
 
-- [x] **README final pass (morning):** thesis, architecture diagram, threat model incl. honest out-of-scope list, 3-minute quickstart, verify instructions, roadmap absorbing all cut ideas — [ ] screenshots (after web deploy)
+- [x] **README final pass (morning):** thesis, architecture diagram, threat model incl. honest out-of-scope list, 3-minute quickstart, verify instructions, roadmap absorbing all cut ideas, screenshots from the live deploy
 - [x] **Judging-agent mapping table** in README: each published agent check (start time, placeholder data, suspicious commits) paired with the Aletheia artifact that answers it
 - [ ] **Demo video (midday, ≤3 min, one unbroken recording):**
   - [ ] The asymmetry problem (20 s)

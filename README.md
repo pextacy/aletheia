@@ -8,8 +8,12 @@ Git history is author-controlled and trivially forgeable: `git commit --date` fa
 
 | What | Where |
 |---|---|
+| Web (proof pages, registration, stats) | [aletheia-two-tau.vercel.app](https://aletheia-two-tau.vercel.app) — this repo's proof page: [/p/1](https://aletheia-two-tau.vercel.app/p/1) |
 | `AletheiaRegistry` (Monad testnet, chain 10143) | [`0x80eDe1D4EEc7572F0a1c28e0A70bC4E4f06F1116`](https://testnet.monadexplorer.com/address/0x80eDe1D4EEc7572F0a1c28e0A70bC4E4f06F1116) — source verified (Sourcify exact match) |
-| This repo on the registry | Project **#1**, registered and attesting since deploy block `46257406` |
+| Bridge (webhook → attestation, `/verify` service) | [aletheia-bridge.onrender.com](https://aletheia-bridge.onrender.com/healthz) |
+| This repo on the registry | Project **#1**, registered and attesting since deploy block `46257406`; push → on-chain measured at ~3 s |
+
+[![Aletheia proof page](docs/img/proof-page.png)](https://aletheia-two-tau.vercel.app/p/1)
 
 ## How it works
 
@@ -97,6 +101,12 @@ cd cli && npm ci && npm run build
 ```
 
 CI runs all of the above on every push (`.github/workflows/ci.yml`).
+
+## Screenshots
+
+| Landing | Registry stats |
+|---|---|
+| [![Landing](docs/img/landing.png)](https://aletheia-two-tau.vercel.app) | [![Stats](docs/img/stats.png)](https://aletheia-two-tau.vercel.app/stats) |
 
 ## Registering a project from the command line
 

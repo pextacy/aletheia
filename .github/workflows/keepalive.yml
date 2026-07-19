@@ -1,9 +1,13 @@
-# Keeps the Render free-plan bridge warm: it spins down after ~15 min idle and
-# a cold start (~50 s) exceeds GitHub's 10 s webhook delivery timeout, which
-# would silently drop push attestations. Pings /healthz every 10 minutes.
+# Every 10 minutes:
+# 1. Ping the bridge /healthz — the Render free plan spins down after ~15 min
+#    idle and a cold start (~50 s) exceeds GitHub's 10 s webhook delivery
+#    timeout, which would silently drop push attestations.
+# 2. Trigger the web /api/sync — incrementally indexes new registry events
+#    into Neon so pages read from the index instead of scanning the chain.
 #
-# Configure the repository variable ALETHEIA_BRIDGE_URL (e.g.
-# https://aletheia-bridge.onrender.com) — the job no-ops until it is set.
+# Configure repository variables ALETHEIA_BRIDGE_URL and ALETHEIA_SITE_URL,
+# plus the ALETHEIA_SYNC_SECRET secret — each step no-ops until its
+# configuration exists.
 name: keepalive
 on:
   schedule:
@@ -23,3 +27,13 @@ jobs:
             exit 0
           fi
           curl -fsS --max-time 60 "$BRIDGE_URL/healthz"
+      - name: Sync registry index
+        env:
+          SITE_URL: ${{ vars.ALETHEIA_SITE_URL }}
+          SYNC_SECRET: ${{ secrets.ALETHEIA_SYNC_SECRET }}
+        run: |
+          if [ -z "$SITE_URL" ] || [ -z "$SYNC_SECRET" ]; then
+            echo "sync not configured — skipping."
+            exit 0
+          fi
+          curl -fsS --max-time 120 -X POST "$SITE_URL/api/sync?token=$SYNC_SECRET"
