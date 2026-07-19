@@ -75,6 +75,20 @@ interface EventLog {
  * Fetch logs over [from, to], bisecting on RPC range-limit errors so the CLI
  * works against providers with any block-range cap.
  */
+/** Rate-limit errors must back off and retry, never bisect — splitting on a
+ * 429 degenerates into thousands of single-block requests that make the
+ * throttling strictly worse. */
+function isRateLimit(err: unknown): boolean {
+  const cause = (err as { cause?: { message?: string; code?: number; status?: number } }).cause;
+  const text = `${err instanceof Error ? err.message : String(err)} ${cause?.message ?? ""}`;
+  return (
+    /rate limit|too many request/i.test(text) ||
+    cause?.code === -32005 ||
+    cause?.status === 429 ||
+    (err as { status?: number }).status === 429
+  );
+}
+
 async function getLogsBisect(
   client: PublicClient,
   event: AbiEvent,
@@ -82,7 +96,8 @@ async function getLogsBisect(
   from: bigint,
   to: bigint,
   registry: Hex,
-  depth = 0
+  depth = 0,
+  attempt = 0
 ): Promise<EventLog[]> {
   try {
     const logs = await client.getLogs({
@@ -94,12 +109,16 @@ async function getLogsBisect(
     });
     return logs as unknown as EventLog[];
   } catch (err) {
+    if (isRateLimit(err)) {
+      if (attempt >= 5) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      return getLogsBisect(client, event, projectId, from, to, registry, depth, attempt + 1);
+    }
     if (depth > 24 || to <= from) throw err;
+    // sequential halves: parallel bisection bursts straight into rate limits
     const mid = from + (to - from) / 2n;
-    const [a, b] = await Promise.all([
-      getLogsBisect(client, event, projectId, from, mid, registry, depth + 1),
-      getLogsBisect(client, event, projectId, mid + 1n, to, registry, depth + 1),
-    ]);
+    const a = await getLogsBisect(client, event, projectId, from, mid, registry, depth + 1);
+    const b = await getLogsBisect(client, event, projectId, mid + 1n, to, registry, depth + 1);
     return [...a, ...b];
   }
 }
