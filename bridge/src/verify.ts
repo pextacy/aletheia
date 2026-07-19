@@ -75,7 +75,11 @@ function git(cwd: string, ...args: string[]): string {
  * the same check the aletheia-verify CLI performs — run here so the proof page
  * can show verified state without the reader running anything.
  */
-export async function verifyProject(ctx: ChainCtx, projectId: number): Promise<VerifyReport> {
+export async function verifyProject(
+  ctx: ChainCtx,
+  projectId: number,
+  prior?: VerifyReport
+): Promise<VerifyReport> {
   const id = BigInt(projectId);
   const [owner, , , createdAt] = await ctx.publicClient.readContract({
     address: ctx.registryAddress,
@@ -88,15 +92,39 @@ export async function verifyProject(ctx: ChainCtx, projectId: number): Promise<V
   }
 
   const latest = await ctx.publicClient.getBlockNumber();
-  const approx = await findBlockByTimestamp(ctx, createdAt, latest);
-  const fromBlock = approx > 16n ? approx - 16n : 0n;
 
-  const [regLogs, attLogs] = await Promise.all([
-    getLogsBisect(ctx, registeredEvent, id, fromBlock, latest),
-    getLogsBisect(ctx, attestedEvent, id, fromBlock, latest),
-  ]);
+  // A prior report anchors the scan: its attestations were read from the chain
+  // up to scannedToBlock, so only the tail needs fetching — on a 100-block-
+  // capped RPC that turns a full-history walk into a couple of requests. The
+  // clone-and-recompute below still covers EVERY attestation, old and new.
+  let prevAtts: Array<{ commitHash: Hex; treeHash: Hex; timestamp: bigint }> = [];
+  let repoUrl = "";
+  let fromBlock: bigint;
+  if (prior && prior.chainId === ctx.id && prior.scannedToBlock > 0 && prior.repoUrl) {
+    prevAtts = prior.entries.map((e) => ({
+      commitHash: `0x${e.commit.padEnd(64, "0")}` as Hex,
+      treeHash: `0x${e.attestedTree.padEnd(64, "0")}` as Hex,
+      timestamp: BigInt(e.attestedAt),
+    }));
+    repoUrl = prior.repoUrl;
+    fromBlock = BigInt(prior.scannedToBlock) + 1n;
+  } else {
+    const approx = await findBlockByTimestamp(ctx, createdAt, latest);
+    fromBlock = approx > 16n ? approx - 16n : 0n;
+  }
 
-  const repoUrl = (regLogs[0]?.args.repoUrl as string | undefined) ?? "";
+  const attLogsNew =
+    fromBlock <= latest ? await getLogsBisect(ctx, attestedEvent, id, fromBlock, latest) : [];
+  if (!repoUrl) {
+    const regLogs = await getLogsBisect(ctx, registeredEvent, id, fromBlock, latest);
+    repoUrl = (regLogs[0]?.args.repoUrl as string | undefined) ?? "";
+  }
+  const attLogs: Array<{ args: Record<string, unknown> }> = [
+    ...prevAtts.map((a) => ({
+      args: { commitHash: a.commitHash, treeHash: a.treeHash, timestamp: a.timestamp },
+    })),
+    ...attLogsNew,
+  ];
   if (!repoUrl) throw new Error(`no ProjectRegistered event found for project ${projectId}`);
 
   // Clone only over HTTPS from github.com. repoUrl is attacker-controllable (set

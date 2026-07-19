@@ -71,12 +71,15 @@ export async function getVerifyResult(ctx: ChainCtx, projectId: number): Promise
   }
 
   const key = `${ctx.id}:${projectId}`;
+  // Anchor the re-verify's chain scan on the previous report so only the tail
+  // of the event history is fetched; the clone still re-checks everything.
+  const prior = cached ? (JSON.parse(cached.report) as VerifyReport) : undefined;
   let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
       await acquireCloneSlot();
       try {
-        const report = await verifyProject(ctx, projectId);
+        const report = await verifyProject(ctx, projectId, prior);
         report.verifiedAt = nowSec();
         await saveVerification(
           ctx.id,
