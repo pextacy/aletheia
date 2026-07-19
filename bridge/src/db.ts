@@ -64,6 +64,9 @@ export function ensureDb(): Promise<void> {
           report            TEXT NOT NULL,
           verified_at       BIGINT NOT NULL
         )`);
+      await pool.query(
+        "ALTER TABLE verifications ADD COLUMN IF NOT EXISTS last_block BIGINT NOT NULL DEFAULT 0"
+      );
     })().catch((err) => {
       schemaReady = null;
       throw err;
@@ -162,37 +165,55 @@ export interface CachedVerification {
   attestationCount: number;
   report: string;
   verifiedAt: number;
+  lastBlock: number;
 }
 
 export async function saveVerification(
   projectId: number,
   attestationCount: number,
   report: string,
-  verifiedAt: number
+  verifiedAt: number,
+  lastBlock: number
 ): Promise<void> {
   await ensureDb();
   await pool.query(
-    `INSERT INTO verifications (project_id, attestation_count, report, verified_at)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO verifications (project_id, attestation_count, report, verified_at, last_block)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (project_id) DO UPDATE SET
        attestation_count = EXCLUDED.attestation_count,
        report = EXCLUDED.report,
-       verified_at = EXCLUDED.verified_at`,
-    [projectId, attestationCount, report, verifiedAt]
+       verified_at = EXCLUDED.verified_at,
+       last_block = EXCLUDED.last_block`,
+    [projectId, attestationCount, report, verifiedAt, lastBlock]
   );
+}
+
+/** Advance the staleness-probe floor after a no-new-attestations check. */
+export async function touchVerificationScan(projectId: number, lastBlock: number): Promise<void> {
+  await ensureDb();
+  await pool.query("UPDATE verifications SET last_block = $1 WHERE project_id = $2", [
+    lastBlock,
+    projectId,
+  ]);
 }
 
 export async function getVerification(projectId: number): Promise<CachedVerification | null> {
   await ensureDb();
   const res = await pool.query(
-    "SELECT attestation_count, report, verified_at FROM verifications WHERE project_id = $1",
+    "SELECT attestation_count, report, verified_at, last_block FROM verifications WHERE project_id = $1",
     [projectId]
   );
   if (res.rows.length === 0) return null;
-  const row = res.rows[0] as { attestation_count: number; report: string; verified_at: string };
+  const row = res.rows[0] as {
+    attestation_count: number;
+    report: string;
+    verified_at: string;
+    last_block: string;
+  };
   return {
     attestationCount: Number(row.attestation_count),
     report: row.report,
     verifiedAt: Number(row.verified_at),
+    lastBlock: Number(row.last_block),
   };
 }

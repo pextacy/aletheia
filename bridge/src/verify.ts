@@ -35,25 +35,23 @@ export interface VerifyReport {
   ok: boolean;
   entries: CommitVerdict[];
   verifiedAt: number;
+  /** Highest block the attestation scan covered — floor for incremental probes. */
+  scannedToBlock: number;
 }
 
-/** Cheap: current on-chain attestation count for a project (no clone). */
-export async function countAttestations(projectId: number): Promise<number> {
-  const id = BigInt(projectId);
-  const [owner, , , createdAt] = await publicClient.readContract({
-    address: registryAddress,
-    abi: registryAbi,
-    functionName: "projects",
-    args: [id],
-  });
-  if (owner === "0x0000000000000000000000000000000000000000") {
-    throw new Error(`project ${projectId} does not exist`);
-  }
+/**
+ * Cheap staleness probe: attestations emitted after `fromBlock`. Scanning only
+ * the tail keeps the steady-state /verify path to a couple of getLogs calls
+ * instead of re-walking the whole range on a 100-block-capped RPC.
+ */
+export async function countAttestationsSince(
+  projectId: number,
+  fromBlock: bigint
+): Promise<{ count: number; latest: bigint }> {
   const latest = await publicClient.getBlockNumber();
-  const approx = await findBlockByTimestamp(createdAt, latest);
-  const fromBlock = approx > 16n ? approx - 16n : 0n;
-  const attLogs = await getLogsBisect(attestedEvent, id, fromBlock, latest);
-  return attLogs.length;
+  if (fromBlock > latest) return { count: 0, latest };
+  const attLogs = await getLogsBisect(attestedEvent, BigInt(projectId), fromBlock, latest);
+  return { count: attLogs.length, latest };
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -158,6 +156,7 @@ export async function verifyProject(projectId: number): Promise<VerifyReport> {
       repoUrl,
       objectFormat,
       attestationCount: attLogs.length,
+      scannedToBlock: Number(latest),
       summary: { verified, missing, mismatched },
       ok: missing === 0 && mismatched === 0,
       entries,

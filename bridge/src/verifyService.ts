@@ -1,5 +1,8 @@
-import { getVerification, saveVerification } from "./db.js";
-import { countAttestations, verifyProject, type VerifyReport } from "./verify.js";
+import { getVerification, saveVerification, touchVerificationScan } from "./db.js";
+import { countAttestationsSince, verifyProject, type VerifyReport } from "./verify.js";
+
+/** Serve the cached report without touching the chain at all inside this window. */
+const FRESH_SEC = 300;
 
 /** Re-verify at most this often even if the attestation count is unchanged. */
 const MAX_AGE_SEC = 3600;
@@ -40,19 +43,28 @@ function nowSec(): number {
 }
 
 /**
- * Cached, deduped project verification. Returns the stored report when the
- * on-chain attestation count is unchanged and the cache is fresh; otherwise
- * clones the repo and re-verifies once, sharing that work across callers.
+ * Cached, deduped project verification, three tiers so the steady state never
+ * re-walks the chain on a range-capped RPC:
+ * 1. fresh cache (< FRESH_SEC): serve stored report, zero chain calls;
+ * 2. staleness probe: scan only blocks after the last covered one — no new
+ *    attestations and not too old ⇒ still valid, advance the floor;
+ * 3. full re-verify (clone + recompute), shared across concurrent callers.
  */
 export async function getVerifyResult(projectId: number): Promise<VerifyResult> {
-  const count = await countAttestations(projectId);
   const cached = await getVerification(projectId);
-  if (
-    cached &&
-    cached.attestationCount === count &&
-    nowSec() - cached.verifiedAt < MAX_AGE_SEC
-  ) {
+  const age = cached ? nowSec() - cached.verifiedAt : Infinity;
+  if (cached && age < FRESH_SEC) {
     return { report: JSON.parse(cached.report) as VerifyReport, cached: true };
+  }
+  if (cached && cached.lastBlock > 0 && age < MAX_AGE_SEC) {
+    const { count, latest } = await countAttestationsSince(
+      projectId,
+      BigInt(cached.lastBlock) + 1n
+    );
+    if (count === 0) {
+      await touchVerificationScan(projectId, Number(latest));
+      return { report: JSON.parse(cached.report) as VerifyReport, cached: true };
+    }
   }
 
   let pending = inFlight.get(projectId);
@@ -66,7 +78,8 @@ export async function getVerifyResult(projectId: number): Promise<VerifyResult> 
           projectId,
           report.attestationCount,
           JSON.stringify(report),
-          report.verifiedAt
+          report.verifiedAt,
+          report.scannedToBlock
         );
         return report;
       } finally {
