@@ -22,8 +22,11 @@ services:
     envVars:
       - key: CHAIN_ID
         value: "10143"
+      # The official RPC, not the Tenderly gateway: the bridge SENDS transactions
+      # and Tenderly's gateway rejects eth_estimateGas outright (-32602 even on a
+      # plain transfer). Tenderly stays the read RPC for web/CLI log scans.
       - key: RPC_URL
-        value: https://monad-testnet.gateway.tenderly.co
+        value: https://testnet-rpc.monad.xyz
       - key: REGISTRY_ADDRESS
         value: "0x80eDe1D4EEc7572F0a1c28e0A70bC4E4f06F1116"
       - key: ATTESTOR_PRIVATE_KEY
