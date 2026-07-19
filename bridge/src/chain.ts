@@ -110,8 +110,16 @@ export async function findBlockByTimestamp(targetTs: bigint, latest: bigint): Pr
   let hi = latest;
   while (lo < hi) {
     const mid = (lo + hi) / 2n;
-    const block = await publicClient.getBlock({ blockNumber: mid });
-    if (block.timestamp < targetTs) lo = mid + 1n;
+    let ts: bigint;
+    try {
+      ts = (await publicClient.getBlock({ blockNumber: mid })).timestamp;
+    } catch {
+      // Non-archive RPCs prune old blocks. A missing block is by definition
+      // older than anything we're searching for, so search upward.
+      lo = mid + 1n;
+      continue;
+    }
+    if (ts < targetTs) lo = mid + 1n;
     else hi = mid;
   }
   return lo;
