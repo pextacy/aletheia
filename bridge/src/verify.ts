@@ -8,10 +8,9 @@ import {
   bytes32ToOid,
   findBlockByTimestamp,
   getLogsBisect,
-  publicClient,
   registeredEvent,
   registryAbi,
-  registryAddress,
+  type ChainCtx,
 } from "./chain.js";
 import { normalizeGithubHttps } from "./repoUrl.js";
 
@@ -26,6 +25,7 @@ export interface CommitVerdict {
 }
 
 export interface VerifyReport {
+  chainId: number;
   projectId: number;
   repoUrl: string;
   objectFormat: "sha1" | "sha256";
@@ -45,12 +45,13 @@ export interface VerifyReport {
  * instead of re-walking the whole range on a 100-block-capped RPC.
  */
 export async function countAttestationsSince(
+  ctx: ChainCtx,
   projectId: number,
   fromBlock: bigint
 ): Promise<{ count: number; latest: bigint }> {
-  const latest = await publicClient.getBlockNumber();
+  const latest = await ctx.publicClient.getBlockNumber();
   if (fromBlock > latest) return { count: 0, latest };
-  const attLogs = await getLogsBisect(attestedEvent, BigInt(projectId), fromBlock, latest);
+  const attLogs = await getLogsBisect(ctx, attestedEvent, BigInt(projectId), fromBlock, latest);
   return { count: attLogs.length, latest };
 }
 
@@ -74,25 +75,25 @@ function git(cwd: string, ...args: string[]): string {
  * the same check the aletheia-verify CLI performs — run here so the proof page
  * can show verified state without the reader running anything.
  */
-export async function verifyProject(projectId: number): Promise<VerifyReport> {
+export async function verifyProject(ctx: ChainCtx, projectId: number): Promise<VerifyReport> {
   const id = BigInt(projectId);
-  const [owner, , , createdAt] = await publicClient.readContract({
-    address: registryAddress,
+  const [owner, , , createdAt] = await ctx.publicClient.readContract({
+    address: ctx.registryAddress,
     abi: registryAbi,
     functionName: "projects",
     args: [id],
   });
   if (owner === "0x0000000000000000000000000000000000000000") {
-    throw new Error(`project ${projectId} does not exist`);
+    throw new Error(`project ${projectId} does not exist on ${ctx.name}`);
   }
 
-  const latest = await publicClient.getBlockNumber();
-  const approx = await findBlockByTimestamp(createdAt, latest);
+  const latest = await ctx.publicClient.getBlockNumber();
+  const approx = await findBlockByTimestamp(ctx, createdAt, latest);
   const fromBlock = approx > 16n ? approx - 16n : 0n;
 
   const [regLogs, attLogs] = await Promise.all([
-    getLogsBisect(registeredEvent, id, fromBlock, latest),
-    getLogsBisect(attestedEvent, id, fromBlock, latest),
+    getLogsBisect(ctx, registeredEvent, id, fromBlock, latest),
+    getLogsBisect(ctx, attestedEvent, id, fromBlock, latest),
   ]);
 
   const repoUrl = (regLogs[0]?.args.repoUrl as string | undefined) ?? "";
@@ -152,6 +153,7 @@ export async function verifyProject(projectId: number): Promise<VerifyReport> {
     }
 
     return {
+      chainId: ctx.id,
       projectId,
       repoUrl,
       objectFormat,

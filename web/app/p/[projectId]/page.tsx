@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SiteFooter, TopNav } from "../../../components/Chrome";
-import { EXPLORER_URL, HACKATHON_START, explorerAddress, explorerTx } from "../../../lib/chain";
+import { HACKATHON_START } from "../../../lib/chain";
+import {
+  defaultChain,
+  explorerAddressOn,
+  explorerTxOn,
+  resolveChain,
+  chainSuffix,
+  type ChainConfig,
+} from "../../../lib/chains";
 import { fetchCommitMeta, fetchForcedCommits } from "../../../lib/github";
 import { fetchProject, type ProjectModel } from "../../../lib/indexer";
 import { fetchVerification, verdictMap, type Verdict } from "../../../lib/verify";
@@ -86,6 +94,7 @@ function VerifyBadge({ verdict }: { verdict: Verdict | undefined }) {
 }
 
 function buildNodes(
+  cfg: ChainConfig,
   project: ProjectModel,
   meta: Map<string, { message: string; author: string }>,
   forced: Set<string>,
@@ -130,7 +139,7 @@ function buildNodes(
                 is shown, not hidden.
               </p>
               <a
-                href={explorerTx(entry.txHash)}
+                href={explorerTxOn(cfg, entry.txHash)}
                 className="text-error text-label-sm uppercase underline hover:text-on-surface transition-colors"
               >
                 View on explorer
@@ -153,7 +162,7 @@ function buildNodes(
               </p>
               <div className="bg-surface-container-lowest p-3 rounded font-mono text-mono-data text-primary flex items-center justify-between gap-3">
                 <span className="truncate min-w-0">{entry.commitHash.slice(0, 18)}…</span>
-                <a href={explorerTx(entry.txHash)} className="shrink-0 text-secondary uppercase">
+                <a href={explorerTxOn(cfg, entry.txHash)} className="shrink-0 text-secondary uppercase">
                   tx ↗
                 </a>
               </div>
@@ -173,7 +182,7 @@ function buildNodes(
         card: (
           <div className="bg-surface-container-lowest p-3 rounded font-mono text-mono-data text-on-surface-variant flex items-center justify-between gap-3">
             <span className="truncate min-w-0">{entry.address}</span>
-            <a href={explorerAddress(entry.address)} className="shrink-0 text-secondary uppercase">
+            <a href={explorerAddressOn(cfg, entry.address)} className="shrink-0 text-secondary uppercase">
               ↗
             </a>
           </div>
@@ -256,12 +265,20 @@ function NodeRow({ node, index }: { node: TimelineNode; index: number }) {
   );
 }
 
-export default async function ProofPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProofPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ chain?: string }>;
+}) {
   const { projectId } = await params;
+  const cfg = resolveChain((await searchParams).chain);
+  const bridgeChain = cfg.id === defaultChain.id ? undefined : cfg.id;
   const id = Number(projectId);
   if (!Number.isInteger(id) || id < 1) notFound();
 
-  const project = await fetchProject(id);
+  const project = await fetchProject(id, cfg);
   if (!project) notFound();
 
   const commitShas = project.timeline
@@ -271,14 +288,14 @@ export default async function ProofPage({ params }: { params: Promise<{ projectI
     project.repoFullName
       ? fetchCommitMeta(project.repoFullName, commitShas)
       : Promise.resolve(new Map<string, { message: string; author: string }>()),
-    fetchForcedCommits(project.projectId),
-    fetchVerification(project.projectId),
+    fetchForcedCommits(project.projectId, bridgeChain),
+    fetchVerification(project.projectId, bridgeChain),
   ]);
 
   const sealed = project.sealedAt !== null;
   const firstAttestation = project.timeline.find((e) => e.kind === "attestation");
   const verdicts = verdictMap(verification);
-  const nodes = buildNodes(project, meta, forced, verdicts);
+  const nodes = buildNodes(cfg, project, meta, forced, verdicts);
   const title = project.repoFullName ?? `Project #${project.projectId}`;
   const verifyCmd = `npx aletheia-verify ${project.projectId}`;
 
@@ -305,6 +322,9 @@ export default async function ProofPage({ params }: { params: Promise<{ projectI
                 </span>
                 <span className="text-on-surface-variant font-mono text-mono-data">
                   PROJECT ID: #{project.projectId}
+                </span>
+                <span className="text-on-surface-variant font-mono text-mono-data uppercase">
+                  {cfg.name}
                 </span>
               </div>
               <h1 className="font-display text-[28px] leading-tight sm:text-[36px] md:text-headline-xl text-on-surface mb-2 break-all">
@@ -420,7 +440,7 @@ export default async function ProofPage({ params }: { params: Promise<{ projectI
                 No keys, no writes, no trust in Aletheia&apos;s servers — just Node and git.
               </div>
               <div className="text-outline mt-1">
-                explorer {EXPLORER_URL.replace("https://", "")}
+                explorer {cfg.explorerUrl.replace("https://", "")}
               </div>
               <div className="mt-3 flex items-center">
                 <span className="text-secondary animate-pulse">_</span>

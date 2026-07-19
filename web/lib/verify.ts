@@ -25,11 +25,15 @@ export interface VerifyReport {
  * unreachable, the proof page still renders fully from chain data — it just
  * shows "on-chain" badges instead of "verified" ones. Never throws.
  */
-export async function fetchVerification(projectId: number): Promise<VerifyReport | null> {
+export async function fetchVerification(
+  projectId: number,
+  chainId?: number
+): Promise<VerifyReport | null> {
   const bridgeUrl = process.env.NEXT_PUBLIC_BRIDGE_URL;
   if (!bridgeUrl) return null;
   try {
-    const res = await fetch(`${bridgeUrl}/verify/${projectId}`, {
+    const chainQs = chainId === undefined ? "" : `?chain=${chainId}`;
+    const res = await fetch(`${bridgeUrl}/verify/${projectId}${chainQs}`, {
       next: { revalidate: 60 },
       signal: AbortSignal.timeout(20_000),
     });

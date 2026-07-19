@@ -20,12 +20,12 @@ import type {
 
 const num = (v: unknown): number => Number(v ?? 0);
 
-export async function neonFetchRecentProjects(limit = 12): Promise<RecentProject[]> {
+export async function neonFetchRecentProjects(chainId: number, limit = 12): Promise<RecentProject[]> {
   if (!sql) return [];
   await ensureSchema();
   const rows = (await sql`
     select project_id, repo_url, owner, created_at
-    from projects order by project_id desc limit ${limit}
+    from projects where chain_id = ${chainId} order by project_id desc limit ${limit}
   `) as Record<string, unknown>[];
   return rows.map((r) => ({
     projectId: num(r.project_id),
@@ -35,12 +35,12 @@ export async function neonFetchRecentProjects(limit = 12): Promise<RecentProject
   }));
 }
 
-export async function neonFetchAllProjects(): Promise<ExplorerProject[]> {
+export async function neonFetchAllProjects(chainId: number): Promise<ExplorerProject[]> {
   if (!sql) return [];
   await ensureSchema();
   const rows = (await sql`
     select project_id, repo_url, owner, created_at, sealed_at
-    from projects order by project_id desc
+    from projects where chain_id = ${chainId} order by project_id desc
   `) as Record<string, unknown>[];
   return rows.map((r) => ({
     projectId: num(r.project_id),
@@ -51,24 +51,24 @@ export async function neonFetchAllProjects(): Promise<ExplorerProject[]> {
   }));
 }
 
-export async function neonLookupProjectByRepo(url: string): Promise<RepoLookup> {
+export async function neonLookupProjectByRepo(chainId: number, url: string): Promise<RepoLookup> {
   const path = canonicalRepoPath(url);
   if (!path) return { path: null, repoHash: null, projectId: 0 };
   const repoHash = repoHashFromPath(path);
   if (!sql) return { path, repoHash, projectId: 0 };
   await ensureSchema();
   const rows = (await sql`
-    select project_id from projects where repo_hash = ${repoHash.toLowerCase()} limit 1
+    select project_id from projects where chain_id = ${chainId} and repo_hash = ${repoHash.toLowerCase()} limit 1
   `) as Record<string, unknown>[];
   return { path, repoHash, projectId: rows.length ? num(rows[0]!.project_id) : 0 };
 }
 
-export async function neonFetchProject(projectId: number): Promise<ProjectModel | null> {
+export async function neonFetchProject(chainId: number, projectId: number): Promise<ProjectModel | null> {
   if (!sql) return null;
   await ensureSchema();
   const projRows = (await sql`
     select project_id, owner, attestor, repo_url, created_at, sealed_at, seal_tx
-    from projects where project_id = ${projectId} limit 1
+    from projects where chain_id = ${chainId} and project_id = ${projectId} limit 1
   `) as Record<string, unknown>[];
   if (!projRows.length) return null;
   const p = projRows[0]!;
@@ -76,11 +76,11 @@ export async function neonFetchProject(projectId: number): Promise<ProjectModel 
   const [attRows, linkRows] = await Promise.all([
     sql`
       select commit_hash, tree_hash, timestamp, tx_hash, block_number
-      from attestations where project_id = ${projectId}
+      from attestations where chain_id = ${chainId} and project_id = ${projectId}
     ` as Promise<Record<string, unknown>[]>,
     sql`
       select address, label, timestamp, tx_hash, block_number
-      from contract_links where project_id = ${projectId}
+      from contract_links where chain_id = ${chainId} and project_id = ${projectId}
     ` as Promise<Record<string, unknown>[]>,
   ]);
 
@@ -122,7 +122,7 @@ export async function neonFetchProject(projectId: number): Promise<ProjectModel 
   };
 }
 
-export async function neonRegistryStats(): Promise<RegistryStats> {
+export async function neonRegistryStats(chainId: number): Promise<RegistryStats> {
   const empty: RegistryStats = {
     projectCount: 0,
     attestationCount: 0,
@@ -141,32 +141,34 @@ export async function neonRegistryStats(): Promise<RegistryStats> {
   const [totals, attDays, regDays, board, recentRows] = await Promise.all([
     sql`
       select
-        (select count(*) from projects)                                    as projects,
-        (select count(*) from attestations)                                as attestations,
-        (select count(*) from projects where sealed_at is not null)        as sealed,
-        (select count(*) from contract_links)                              as links,
-        (select count(distinct owner) from projects)                       as owners,
-        (select min(created_at) from projects)                             as first_reg,
-        (select min(timestamp)  from attestations)                         as first_att,
-        (select max(timestamp)  from attestations)                         as last_att
+        (select count(*) from projects where chain_id = ${chainId})                             as projects,
+        (select count(*) from attestations where chain_id = ${chainId})                         as attestations,
+        (select count(*) from projects where chain_id = ${chainId} and sealed_at is not null)   as sealed,
+        (select count(*) from contract_links where chain_id = ${chainId})                       as links,
+        (select count(distinct owner) from projects where chain_id = ${chainId})                as owners,
+        (select min(created_at) from projects where chain_id = ${chainId})                      as first_reg,
+        (select min(timestamp)  from attestations where chain_id = ${chainId})                  as first_att,
+        (select max(timestamp)  from attestations where chain_id = ${chainId})                  as last_att
     ` as Promise<Record<string, unknown>[]>,
     sql`
       select to_char(to_timestamp(timestamp), 'YYYY-MM-DD') as day, count(*) as n
-      from attestations group by day
+      from attestations where chain_id = ${chainId} group by day
     ` as Promise<Record<string, unknown>[]>,
     sql`
       select to_char(to_timestamp(created_at), 'YYYY-MM-DD') as day, count(*) as n
-      from projects group by day
+      from projects where chain_id = ${chainId} group by day
     ` as Promise<Record<string, unknown>[]>,
     sql`
       select a.project_id, count(*) as n, p.repo_url, (p.sealed_at is not null) as sealed
-      from attestations a join projects p on p.project_id = a.project_id
+      from attestations a join projects p on p.chain_id = a.chain_id and p.project_id = a.project_id
+      where a.chain_id = ${chainId}
       group by a.project_id, p.repo_url, p.sealed_at
       order by n desc, a.project_id asc
     ` as Promise<Record<string, unknown>[]>,
     sql`
       select a.project_id, a.commit_hash, a.timestamp, a.tx_hash, p.repo_url
-      from attestations a join projects p on p.project_id = a.project_id
+      from attestations a join projects p on p.chain_id = a.chain_id and p.project_id = a.project_id
+      where a.chain_id = ${chainId}
       order by a.timestamp desc limit 12
     ` as Promise<Record<string, unknown>[]>,
   ]);

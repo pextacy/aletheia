@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, TopNav } from "../../components/Chrome";
-import { EXPLORER_URL, explorerTx } from "../../lib/chain";
+import { explorerTxOn, resolveChain, chainSuffix } from "../../lib/chains";
 import { fetchRegistryStats, type DayPoint } from "../../lib/indexer";
 
 // Aggregates live chain logs on every load — never cache.
@@ -141,8 +141,13 @@ function ChartCard({
   );
 }
 
-export default async function StatsPage() {
-  const stats = await fetchRegistryStats();
+export default async function StatsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ chain?: string }>;
+}) {
+  const cfg = resolveChain((await searchParams).chain);
+  const stats = await fetchRegistryStats(cfg);
   const active = Math.max(0, stats.projectCount - stats.sealedCount);
   const sealedPct = stats.projectCount ? (stats.sealedCount / stats.projectCount) * 100 : 0;
   const hasData = stats.projectCount > 0 || stats.attestationCount > 0;
@@ -307,7 +312,7 @@ export default async function StatsPage() {
                         account_tree
                       </span>
                       <Link
-                        href={`/p/${a.projectId}`}
+                        href={`/p/${a.projectId}${chainSuffix(cfg)}`}
                         className="font-display text-body-md text-on-surface hover:text-primary transition-colors truncate min-w-0 flex-1"
                       >
                         {repoName(a.repoUrl) || `Project #${a.projectId}`}
@@ -316,7 +321,7 @@ export default async function StatsPage() {
                         {a.commitHash.slice(0, 8)}
                       </span>
                       <a
-                        href={explorerTx(a.txHash)}
+                        href={explorerTxOn(cfg, a.txHash)}
                         className="font-mono text-mono-data text-secondary shrink-0"
                         title={fmtDateTime(a.timestamp)}
                       >
@@ -332,7 +337,7 @@ export default async function StatsPage() {
 
         <div className="mt-16 flex justify-center">
           <a
-            href={EXPLORER_URL}
+            href={cfg.explorerUrl}
             className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors text-label-sm uppercase tracking-widest"
           >
             Verify these counts on the block explorer

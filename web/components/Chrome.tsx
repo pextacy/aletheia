@@ -1,5 +1,13 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { EXPLORER_URL } from "../lib/chain";
+import { chainConfigs, defaultChain, multiChain } from "../lib/chains";
+import ChainSwitcher from "./ChainSwitcher";
+
+const switcherChains = chainConfigs.map((c) => ({
+  id: c.id,
+  label: c.id === 10143 ? "Testnet" : c.id === 143 ? "Mainnet" : `#${c.id}`,
+}));
 
 const REPO_URL = "https://github.com/pextacy/aletheia";
 
@@ -74,6 +82,11 @@ export function TopNav({
           >
             Docs
           </Link>
+          {multiChain && (
+            <Suspense fallback={null}>
+              <ChainSwitcher chains={switcherChains} defaultId={defaultChain.id} />
+            </Suspense>
+          )}
         </div>
         <a
           href="/#register"

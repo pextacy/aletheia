@@ -124,38 +124,34 @@ To enable:
    idempotently pulls new events since the last synced block.
 4. The `/stats` dashboard reads from the index when present.
 
-## Mainnet (chain 143) — running both chains together
+## Mainnet (chain 143) — both chains in the same deployment
 
-Every component is chain-parametric; "mainnet support" is an ops exercise, not
-a code change. One bridge/web instance serves one chain, so mainnet runs as a
-second set of instances next to the testnet ones:
+The bridge and the web each serve every configured chain from ONE deployment:
+per-chain transaction queues and chain-scoped database rows in the same Neon
+database, `?chain=143` on the web (default-chain URLs never change meaning).
+Activating mainnet is configuration, not code:
 
-1. **Fund real wallets.** Send real MON on chain 143 to the owner (~0.3 MON
-   covers deploy + registration) and the attestor (per-push attestations,
-   ~50k gas each — top up to taste). Consider fresh keys for mainnet; the
-   registry is per-chain, so testnet state carries nothing over.
+1. **Fund real wallets** on chain 143: owner ~0.3 MON (deploy + registration),
+   attestor per-push gas (~50k gas each — top up to taste).
 2. **Deploy the contract:**
    ```bash
    CHAIN_ID=143 RPC_URL=https://rpc.monad.xyz \
    EXPLORER_URL=https://monadexplorer.com ./scripts/chain-setup.sh
    ```
-   Writes `deployments/143.json`; source verification runs on Sourcify as on
-   testnet.
-3. **Second bridge instance** (Render): deploy the same blueprint again as
-   `aletheia-bridge-mainnet` with `CHAIN_ID=143`, the mainnet RPC, the new
-   `REGISTRY_ADDRESS`, and — **required** — a *separate* Neon database in
-   `DATABASE_URL`: the bridge tables are not chain-scoped, so two chains must
-   never share one database.
-4. **Second web instance** (Vercel): new project from the same repo with the
-   143 env set (`CHAIN_ID`, `RPC_URL`, `EXPLORER_URL`, `REGISTRY_ADDRESS`,
-   `DEPLOY_BLOCK`, mainnet `NEXT_PUBLIC_BRIDGE_URL`, its own Neon
-   `DATABASE_URL` + `SYNC_SECRET`).
-5. **Webhooks**: a mainnet-registered repo points its webhook at the mainnet
-   bridge URL. The GitHub Action path works unchanged with
-   `ALETHEIA_REGISTRY` set to the mainnet address and `ALETHEIA_RPC` to
-   `https://rpc.monad.xyz`.
-6. **CLI**: pass the chain explicitly —
+   Writes `deployments/143.json`; Sourcify verification as on testnet.
+3. **Bridge (Render)**: add env vars `MAINNET_RPC_URL=https://rpc.monad.xyz`
+   and `MAINNET_REGISTRY_ADDRESS=<step 2 address>`; redeploy. `/healthz` now
+   reports both chains; webhooks attest on every chain the repo is registered
+   on; `/status` and `/verify` take `?chain=143`.
+4. **Web (Vercel)**: add `MAINNET_REGISTRY_ADDRESS` and
+   `MAINNET_DEPLOY_BLOCK` (from step 2; `MAINNET_RPC_URL` and
+   `MAINNET_EXPLORER_URL` have sane defaults); redeploy. A chain switcher
+   appears in the nav; `/api/sync` indexes both chains into the same Neon
+   database (rows are chain-scoped).
+5. **CLI**: explicit per chain —
    `npx aletheia-verify <id> --registry <mainnet address> --rpc https://rpc.monad.xyz`.
+6. The GitHub Action path works per chain with `ALETHEIA_REGISTRY` /
+   `ALETHEIA_RPC` pointed at mainnet.
 
 Costs are real on mainnet: registration is one transaction, each push one
 attestation (~50k gas single, cheaper per commit in batches).

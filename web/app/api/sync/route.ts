@@ -23,7 +23,8 @@ async function run(req: Request) {
   }
   try {
     const result = await syncRegistry();
-    return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+    const status = result.ok ? 200 : result.chains.length === 0 ? 400 : 502;
+    return NextResponse.json(result, { status });
   } catch (err) {
     return NextResponse.json(
       { ok: false, reason: err instanceof Error ? err.message : "sync failed" },

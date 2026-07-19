@@ -1,12 +1,14 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { formatEther, verifyMessage, type Hex } from "viem";
 import {
   account,
+  chainById,
+  chains,
   gitOidToBytes32,
-  lookupProjectId,
-  publicClient,
+  lookupRegistrations,
+  primaryChain,
   registryAbi,
-  registryAddress,
+  type ChainCtx,
 } from "./chain.js";
 import {
   getWebhookSecret,
@@ -19,7 +21,7 @@ import {
 import { env } from "./env.js";
 import { fetchCompareRange, fetchTreeSha, type CommitPair } from "./github.js";
 import { verifySignature } from "./hmac.js";
-import { txQueue } from "./queue.js";
+import { queueFor } from "./queue.js";
 import { getVerifyResult } from "./verifyService.js";
 
 interface PushPayload {
@@ -60,6 +62,15 @@ async function resolveCommitPairs(payload: PushPayload, repo: string): Promise<C
   return pairs;
 }
 
+/** Resolve ?chain= to a configured chain (default: the primary). */
+function chainFromQuery(req: FastifyRequest): ChainCtx | null {
+  const raw = (req.query as { chain?: string }).chain;
+  if (raw === undefined || raw === "") return primaryChain;
+  const id = Number(raw);
+  if (!Number.isInteger(id)) return null;
+  return chainById(id) ?? null;
+}
+
 export function buildServer() {
   // Cap the request body: the raw payload is buffered before the HMAC check, so
   // an explicit limit bounds pre-auth memory use. Real GitHub push payloads are
@@ -87,11 +98,20 @@ export function buildServer() {
     }
 
     const repo = payload.repository?.full_name;
-    const projectId = repo ? await lookupProjectId(repo) : 0n;
-    const projectSecret = projectId > 0n ? await getWebhookSecret(Number(projectId)) : null;
-    const secret = projectSecret ?? env.GITHUB_WEBHOOK_SECRET;
+    // The repo may be registered on any configured chain — possibly several.
+    const registrations = repo ? await lookupRegistrations(repo) : [];
+    const active = registrations.filter((r) => r.projectId > 0n);
 
-    if (!verifySignature(rawBody, signature, secret)) {
+    // Candidate secrets: each chain's per-project secret, then the global one.
+    // The HMAC must match one of them; each check is constant-time.
+    const candidates: string[] = [];
+    for (const { ctx, projectId } of active) {
+      const s = await getWebhookSecret(ctx.id, Number(projectId));
+      if (s) candidates.push(s);
+    }
+    candidates.push(env.GITHUB_WEBHOOK_SECRET);
+
+    if (!candidates.some((secret) => verifySignature(rawBody, signature, secret))) {
       req.log.warn({ deliveryId, repo }, "webhook rejected: invalid HMAC signature");
       return reply.status(401).send({ error: "invalid signature" });
     }
@@ -104,14 +124,9 @@ export function buildServer() {
       return reply.status(422).send({ error: "missing X-GitHub-Delivery" });
     }
     if (!repo) return reply.status(422).send({ error: "missing repository.full_name" });
-    if (projectId === 0n) {
-      req.log.warn({ repo, deliveryId }, "webhook rejected: repo not registered");
+    if (active.length === 0) {
+      req.log.warn({ repo, deliveryId }, "webhook rejected: repo not registered on any chain");
       return reply.status(422).send({ error: `repo not registered: ${repo}` });
-    }
-
-    if (!(await recordDelivery(deliveryId, repo))) {
-      req.log.info({ deliveryId }, "duplicate delivery, skipping");
-      return reply.status(200).send({ status: "duplicate" });
     }
 
     const pairs = await resolveCommitPairs(payload, repo);
@@ -119,40 +134,70 @@ export function buildServer() {
       // branch deletions and tag-only pushes carry no commits — nothing to attest
       return reply.status(200).send({ status: "no commits" });
     }
-
     const forced = payload.forced === true;
-    const submissionIds: number[] = [];
-    for (const p of pairs) {
-      submissionIds.push(await recordSubmission(projectId, deliveryId, p.commit, p.tree, forced));
-    }
     const jobPairs = pairs.map((p) => ({
       commit32: gitOidToBytes32(p.commit),
       tree32: gitOidToBytes32(p.tree),
     }));
 
-    const result = await txQueue.enqueue({ projectId, pairs: jobPairs, submissionIds });
-    if (!result.ok) {
-      // Only release the delivery when nothing was submitted (retryable) — then
-      // GitHub's redelivery reprocesses it instead of being rejected as a
-      // duplicate. If a tx exists but reverted or the receipt is unknown,
-      // retrying could double-attest, so the delivery stays recorded and the
-      // failure is surfaced via /status. Either way, never a silent success.
-      if (result.retryable) await releaseDelivery(deliveryId);
+    // Attest on every chain the repo is registered on. Chains are independent:
+    // each has its own delivery receipt, submissions, queue, and failure state.
+    const results: Array<{
+      chainId: number;
+      status: "submitted" | "duplicate" | "failed";
+      txHash?: Hex;
+      retryable?: boolean;
+    }> = [];
+    for (const { ctx, projectId } of active) {
+      if (!(await recordDelivery(deliveryId, ctx.id, repo))) {
+        req.log.info({ deliveryId, chainId: ctx.id }, "duplicate delivery, skipping");
+        results.push({ chainId: ctx.id, status: "duplicate" });
+        continue;
+      }
+      const submissionIds: number[] = [];
+      for (const p of pairs) {
+        submissionIds.push(
+          await recordSubmission(ctx.id, projectId, deliveryId, p.commit, p.tree, forced)
+        );
+      }
+      const result = await queueFor(ctx).enqueue({ projectId, pairs: jobPairs, submissionIds });
+      if (result.ok) {
+        results.push({ chainId: ctx.id, status: "submitted", txHash: result.txHash });
+      } else {
+        // Only release the delivery when nothing was submitted (retryable) — then
+        // GitHub's redelivery reprocesses it instead of being rejected as a
+        // duplicate. If a tx exists but reverted or the receipt is unknown,
+        // retrying could double-attest, so the delivery stays recorded and the
+        // failure is surfaced via /status. Either way, never a silent success.
+        if (result.retryable) await releaseDelivery(deliveryId, ctx.id);
+        results.push({ chainId: ctx.id, status: "failed", retryable: result.retryable });
+      }
+    }
+
+    const failed = results.filter((r) => r.status === "failed");
+    if (failed.length > 0) {
       return reply.status(502).send({
-        error: result.retryable
+        error: failed.every((f) => f.retryable)
           ? "attestation not submitted; retry the delivery — see /status"
           : "attestation failed after submission; see /status before retrying",
+        results,
       });
     }
-    return reply.status(200).send({ txHash: result.txHash, commits: pairs.length });
+    if (results.every((r) => r.status === "duplicate")) {
+      return reply.status(200).send({ status: "duplicate", results });
+    }
+    const first = results.find((r) => r.status === "submitted");
+    return reply.status(200).send({ txHash: first?.txHash, commits: pairs.length, results });
   });
 
   // Bind a per-project webhook secret. Only the on-chain project owner can do
   // this: the secret must arrive with an EIP-191 signature over
   // "aletheia-webhook-secret:<projectId>:<secret>" from the owner key.
+  // chainId selects which chain's registry the project lives on (default:
+  // the primary chain).
   app.post("/webhook/register-secret", async (req, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
-    let body: { projectId?: number; secret?: string; signature?: string };
+    let body: { projectId?: number; secret?: string; signature?: string; chainId?: number };
     try {
       body = JSON.parse((req.body as Buffer).toString("utf8")) as typeof body;
     } catch {
@@ -168,9 +213,13 @@ export function buildServer() {
     ) {
       return reply.status(422).send({ error: "expected {projectId, secret(64 hex), signature}" });
     }
+    const ctx = body.chainId === undefined ? primaryChain : chainById(body.chainId);
+    if (!ctx) {
+      return reply.status(422).send({ error: `chain not served here: ${body.chainId}` });
+    }
 
-    const [owner] = await publicClient.readContract({
-      address: registryAddress,
+    const [owner] = await ctx.publicClient.readContract({
+      address: ctx.registryAddress,
       abi: registryAbi,
       functionName: "projects",
       args: [BigInt(projectId as number)],
@@ -185,11 +234,11 @@ export function buildServer() {
       signature: signature as Hex,
     });
     if (!valid) {
-      req.log.warn({ projectId }, "register-secret rejected: bad owner signature");
+      req.log.warn({ projectId, chainId: ctx.id }, "register-secret rejected: bad owner signature");
       return reply.status(401).send({ error: "signature does not match project owner" });
     }
 
-    await setWebhookSecret(projectId as number, secret);
+    await setWebhookSecret(ctx.id, projectId as number, secret);
     return reply.send({ ok: true });
   });
 
@@ -203,17 +252,42 @@ export function buildServer() {
   });
 
   app.get("/healthz", async (_req, reply) => {
-    const [blockNumber, balance] = await Promise.all([
-      publicClient.getBlockNumber(),
-      publicClient.getBalance({ address: account.address }),
-    ]);
-    const balanceMon = Number(formatEther(balance));
-    return reply.send({
-      ok: true,
-      blockNumber: blockNumber.toString(),
+    const perChain = await Promise.all(
+      chains.map(async (ctx) => {
+        try {
+          const [blockNumber, balance] = await Promise.all([
+            ctx.publicClient.getBlockNumber(),
+            ctx.publicClient.getBalance({ address: account.address }),
+          ]);
+          const balanceMon = Number(formatEther(balance));
+          return {
+            chainId: ctx.id,
+            name: ctx.name,
+            ok: true,
+            blockNumber: blockNumber.toString(),
+            balanceMon,
+            lowBalance: balanceMon < 0.5,
+          };
+        } catch (err) {
+          return {
+            chainId: ctx.id,
+            name: ctx.name,
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      })
+    );
+    const ok = perChain.every((c) => c.ok);
+    const primary = perChain[0]!;
+    return reply.status(ok ? 200 : 502).send({
+      ok,
       attestor: account.address,
-      balanceMon,
-      lowBalance: balanceMon < 0.5,
+      // legacy top-level fields mirror the primary chain
+      blockNumber: "blockNumber" in primary ? primary.blockNumber : undefined,
+      balanceMon: "balanceMon" in primary ? primary.balanceMon : undefined,
+      lowBalance: "lowBalance" in primary ? primary.lowBalance : undefined,
+      chains: perChain,
     });
   });
 
@@ -222,7 +296,13 @@ export function buildServer() {
     if (!Number.isInteger(id) || id < 1) {
       return reply.status(422).send({ error: "invalid project id" });
     }
-    return reply.send({ projectId: id, submissions: await recentSubmissions(id) });
+    const ctx = chainFromQuery(req);
+    if (!ctx) return reply.status(422).send({ error: "chain not served here" });
+    return reply.send({
+      projectId: id,
+      chainId: ctx.id,
+      submissions: await recentSubmissions(ctx.id, id),
+    });
   });
 
   // Independent verification: clone the repo, recompute every commit + tree
@@ -234,15 +314,17 @@ export function buildServer() {
     if (!Number.isInteger(id) || id < 1) {
       return reply.status(422).send({ error: "invalid project id" });
     }
+    const ctx = chainFromQuery(req);
+    if (!ctx) return reply.status(422).send({ error: "chain not served here" });
     try {
-      const { report, cached } = await getVerifyResult(id);
+      const { report, cached } = await getVerifyResult(ctx, id);
       return reply.header("X-Aletheia-Cache", cached ? "hit" : "miss").send(report);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/does not exist/.test(msg)) {
         return reply.status(404).send({ error: msg });
       }
-      req.log.error({ projectId: id, err: msg }, "verification failed");
+      req.log.error({ projectId: id, chainId: ctx.id, err: msg }, "verification failed");
       return reply.status(502).send({ error: `verification failed: ${msg}` });
     }
   });

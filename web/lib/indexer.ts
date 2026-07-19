@@ -1,5 +1,6 @@
 import type { AbiEvent } from "viem";
-import { DEPLOY_BLOCK, REGISTRY_ADDRESS, events, publicClient, registryAbi } from "./chain";
+import { events, registryAbi } from "./chain";
+import { defaultChain, type ChainConfig } from "./chains";
 import { dbEnabled } from "./db";
 import {
   neonFetchAllProjects,
@@ -69,6 +70,7 @@ function isRateLimit(err: unknown): boolean {
 }
 
 export async function getLogsBisect(
+  cfg: ChainConfig,
   event: AbiEvent,
   projectId: bigint | undefined,
   from: bigint,
@@ -77,8 +79,8 @@ export async function getLogsBisect(
   attempt = 0
 ): Promise<RawLog[]> {
   try {
-    const logs = await publicClient.getLogs({
-      address: REGISTRY_ADDRESS,
+    const logs = await cfg.client.getLogs({
+      address: cfg.registryAddress,
       event,
       args: (projectId === undefined ? undefined : { projectId }) as never,
       fromBlock: from,
@@ -89,42 +91,45 @@ export async function getLogsBisect(
     if (isRateLimit(err)) {
       if (attempt >= 5) throw err;
       await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
-      return getLogsBisect(event, projectId, from, to, depth, attempt + 1);
+      return getLogsBisect(cfg, event, projectId, from, to, depth, attempt + 1);
     }
     if (depth > 24 || to <= from) throw err;
     // sequential halves: parallel bisection bursts straight into rate limits
     const mid = from + (to - from) / 2n;
-    const a = await getLogsBisect(event, projectId, from, mid, depth + 1);
-    const b = await getLogsBisect(event, projectId, mid + 1n, to, depth + 1);
+    const a = await getLogsBisect(cfg, event, projectId, from, mid, depth + 1);
+    const b = await getLogsBisect(cfg, event, projectId, mid + 1n, to, depth + 1);
     return [...a, ...b];
   }
 }
 
 
-export async function fetchProject(projectId: number): Promise<ProjectModel | null> {
+export async function fetchProject(
+  projectId: number,
+  cfg: ChainConfig = defaultChain
+): Promise<ProjectModel | null> {
   if (dbEnabled) {
     try {
-      const fromDb = await neonFetchProject(projectId);
+      const fromDb = await neonFetchProject(cfg.id, projectId);
       if (fromDb) return fromDb;
     } catch {
       // fall through to RPC on any Neon error
     }
   }
   const id = BigInt(projectId);
-  const [owner, attestor, , createdAt, sealedAt] = await publicClient.readContract({
-    address: REGISTRY_ADDRESS,
+  const [owner, attestor, , createdAt, sealedAt] = await cfg.client.readContract({
+    address: cfg.registryAddress,
     abi: registryAbi,
     functionName: "projects",
     args: [id],
   });
   if (owner === "0x0000000000000000000000000000000000000000") return null;
 
-  const latest = await publicClient.getBlockNumber();
+  const latest = await cfg.client.getBlockNumber();
   const [regLogs, attLogs, linkLogs, sealLogs] = await Promise.all([
-    getLogsBisect(events.registered, id, DEPLOY_BLOCK, latest),
-    getLogsBisect(events.attested, id, DEPLOY_BLOCK, latest),
-    getLogsBisect(events.linked, id, DEPLOY_BLOCK, latest),
-    getLogsBisect(events.sealed, id, DEPLOY_BLOCK, latest),
+    getLogsBisect(cfg, events.registered, id, cfg.deployBlock, latest),
+    getLogsBisect(cfg, events.attested, id, cfg.deployBlock, latest),
+    getLogsBisect(cfg, events.linked, id, cfg.deployBlock, latest),
+    getLogsBisect(cfg, events.sealed, id, cfg.deployBlock, latest),
   ]);
 
   const repoUrl = (regLogs[0]?.args.repoUrl as string | undefined) ?? "";
@@ -187,12 +192,15 @@ export interface RepoLookup {
  * canonical path and reading `projectByRepo`. The lookup is trustless: the same
  * keccak256 anyone can recompute, read straight from the chain.
  */
-export async function lookupProjectByRepo(url: string): Promise<RepoLookup> {
+export async function lookupProjectByRepo(
+  url: string,
+  cfg: ChainConfig = defaultChain
+): Promise<RepoLookup> {
   const path = canonicalRepoPath(url);
   if (!path) return { path: null, repoHash: null, projectId: 0 };
   if (dbEnabled) {
     try {
-      const fromDb = await neonLookupProjectByRepo(url);
+      const fromDb = await neonLookupProjectByRepo(cfg.id, url);
       // A hit is authoritative; a miss may just be unsynced — fall through to RPC.
       if (fromDb.projectId > 0) return fromDb;
     } catch {
@@ -200,8 +208,8 @@ export async function lookupProjectByRepo(url: string): Promise<RepoLookup> {
     }
   }
   const repoHash = repoHashFromPath(path);
-  const id = await publicClient.readContract({
-    address: REGISTRY_ADDRESS,
+  const id = await cfg.client.readContract({
+    address: cfg.registryAddress,
     abi: registryAbi,
     functionName: "projectByRepo",
     args: [repoHash],
@@ -209,16 +217,19 @@ export async function lookupProjectByRepo(url: string): Promise<RepoLookup> {
   return { path, repoHash, projectId: Number(id) };
 }
 
-export async function fetchRecentProjects(limit = 12): Promise<RecentProject[]> {
+export async function fetchRecentProjects(
+  limit = 12,
+  cfg: ChainConfig = defaultChain
+): Promise<RecentProject[]> {
   if (dbEnabled) {
     try {
-      return await neonFetchRecentProjects(limit);
+      return await neonFetchRecentProjects(cfg.id, limit);
     } catch {
       // fall through to RPC on any Neon error
     }
   }
-  const latest = await publicClient.getBlockNumber();
-  const logs = await getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest);
+  const latest = await cfg.client.getBlockNumber();
+  const logs = await getLogsBisect(cfg, events.registered, undefined, cfg.deployBlock, latest);
   return logs
     .map((l) => ({
       projectId: Number(l.args.projectId as bigint),
@@ -241,16 +252,16 @@ export interface ExplorerProject extends RecentProject {
  * struct (a cheap call each) so the list reflects seals that happened after
  * registration. Ordered newest first.
  */
-export async function fetchAllProjects(): Promise<ExplorerProject[]> {
+export async function fetchAllProjects(cfg: ChainConfig = defaultChain): Promise<ExplorerProject[]> {
   if (dbEnabled) {
     try {
-      return await neonFetchAllProjects();
+      return await neonFetchAllProjects(cfg.id);
     } catch {
       // fall through to RPC on any Neon error
     }
   }
-  const latest = await publicClient.getBlockNumber();
-  const logs = await getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest);
+  const latest = await cfg.client.getBlockNumber();
+  const logs = await getLogsBisect(cfg, events.registered, undefined, cfg.deployBlock, latest);
   const base = logs
     .map((l) => ({
       projectId: Number(l.args.projectId as bigint),
@@ -263,8 +274,8 @@ export async function fetchAllProjects(): Promise<ExplorerProject[]> {
   return Promise.all(
     base.map(async (p) => {
       try {
-        const [, , , , sealedAt] = await publicClient.readContract({
-          address: REGISTRY_ADDRESS,
+        const [, , , , sealedAt] = await cfg.client.readContract({
+          address: cfg.registryAddress,
           abi: registryAbi,
           functionName: "projects",
           args: [BigInt(p.projectId)],
@@ -339,21 +350,21 @@ const EMPTY_STATS: RegistryStats = {
  * derived from chain logs — no mock data. Prefers the Neon index when
  * configured; degrades to zeroed stats on error so the page renders.
  */
-export async function fetchRegistryStats(): Promise<RegistryStats> {
+export async function fetchRegistryStats(cfg: ChainConfig = defaultChain): Promise<RegistryStats> {
   if (dbEnabled) {
     try {
-      return await neonRegistryStats();
+      return await neonRegistryStats(cfg.id);
     } catch {
       // fall through to RPC on any Neon error
     }
   }
   try {
-    const latest = await publicClient.getBlockNumber();
+    const latest = await cfg.client.getBlockNumber();
     const [regLogs, attLogs, sealLogs, linkLogs] = await Promise.all([
-      getLogsBisect(events.registered, undefined, DEPLOY_BLOCK, latest),
-      getLogsBisect(events.attested, undefined, DEPLOY_BLOCK, latest),
-      getLogsBisect(events.sealed, undefined, DEPLOY_BLOCK, latest),
-      getLogsBisect(events.linked, undefined, DEPLOY_BLOCK, latest),
+      getLogsBisect(cfg, events.registered, undefined, cfg.deployBlock, latest),
+      getLogsBisect(cfg, events.attested, undefined, cfg.deployBlock, latest),
+      getLogsBisect(cfg, events.sealed, undefined, cfg.deployBlock, latest),
+      getLogsBisect(cfg, events.linked, undefined, cfg.deployBlock, latest),
     ]);
 
     const repoUrlById = new Map<number, string>();

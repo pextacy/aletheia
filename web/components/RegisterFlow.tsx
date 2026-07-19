@@ -137,7 +137,7 @@ export default function RegisterFlow(props: Props) {
         const res = await fetch(`${props.bridgeUrl}/webhook/register-secret`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: Number(projectId), secret, signature }),
+          body: JSON.stringify({ projectId: Number(projectId), secret, signature, chainId: props.chainId }),
         });
         secretRegistered = res.ok;
       } catch {

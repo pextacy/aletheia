@@ -1,5 +1,5 @@
 import { env } from "./env.js";
-import { publicClient } from "./chain.js";
+import { chains } from "./chain.js";
 import { closeDb, ensureDb } from "./db.js";
 import { buildServer } from "./server.js";
 
@@ -12,9 +12,16 @@ process.on("uncaughtException", (err) => {
   console.error("uncaughtException:", err instanceof Error ? err.stack : err);
 });
 
-const chainId = await publicClient.getChainId();
-if (chainId !== Number(env.CHAIN_ID)) {
-  throw new Error(`RPC chain id ${chainId} does not match CHAIN_ID env ${env.CHAIN_ID}`);
+// Every configured chain's RPC must actually be that chain — a mismatch would
+// sign transactions for the wrong network. env.CHAIN_ID anchors the primary.
+for (const ctx of chains) {
+  const chainId = await ctx.publicClient.getChainId();
+  if (chainId !== ctx.id) {
+    throw new Error(`RPC chain id ${chainId} does not match configured chain ${ctx.id} (${ctx.name})`);
+  }
+}
+if (chains[0]!.id !== Number(env.CHAIN_ID)) {
+  throw new Error(`primary chain mismatch: ${chains[0]!.id} != CHAIN_ID env ${env.CHAIN_ID}`);
 }
 
 // Fail fast if Neon is unreachable or the schema can't be created.

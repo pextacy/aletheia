@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, TopNav } from "../../components/Chrome";
-import { EXPLORER_URL } from "../../lib/chain";
+import { resolveChain, chainSuffix } from "../../lib/chains";
 import { fetchAllProjects, type ExplorerProject } from "../../lib/indexer";
 
 // The full registry is live chain state — always render fresh.
@@ -69,11 +69,11 @@ function FilterTab({
   );
 }
 
-function ProjectCard({ p, i }: { p: ExplorerProject; i: number }) {
+function ProjectCard({ p, i, suffix }: { p: ExplorerProject; i: number; suffix: string }) {
   const sealed = p.sealedAt !== null;
   return (
     <Link
-      href={`/p/${p.projectId}`}
+      href={`/p/${p.projectId}${suffix}`}
       className="glass-panel p-6 rounded-xl hover:-translate-y-1 transition-all duration-300 block"
     >
       <div className="flex justify-between items-start mb-6">
@@ -112,16 +112,17 @@ function ProjectCard({ p, i }: { p: ExplorerProject; i: number }) {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; chain?: string }>;
 }) {
   const sp = await searchParams;
+  const cfg = resolveChain(sp.chain);
   const q = (sp.q ?? "").trim();
   const status: Status =
     sp.status === "sealed" || sp.status === "active"
       ? sp.status
       : "all";
 
-  const all = await fetchAllProjects().catch(() => [] as ExplorerProject[]);
+  const all = await fetchAllProjects(cfg).catch(() => [] as ExplorerProject[]);
   const sealedCount = all.filter((p) => p.sealedAt !== null).length;
   const activeCount = all.length - sealedCount;
 
@@ -224,14 +225,14 @@ export default async function ProjectsPage({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {filtered.map((p, i) => (
-              <ProjectCard key={p.projectId} p={p} i={i} />
+              <ProjectCard key={p.projectId} p={p} i={i} suffix={chainSuffix(cfg)} />
             ))}
           </div>
         )}
 
         <div className="mt-16 flex justify-center">
           <a
-            href={EXPLORER_URL}
+            href={cfg.explorerUrl}
             className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors text-label-sm uppercase tracking-widest"
           >
             Read the registry on the block explorer

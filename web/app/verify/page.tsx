@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, TopNav } from "../../components/Chrome";
-import { EXPLORER_URL, explorerAddress } from "../../lib/chain";
+import { explorerAddressOn, resolveChain, chainSuffix, type ChainConfig } from "../../lib/chains";
 import { fetchProject, lookupProjectByRepo, type RepoLookup } from "../../lib/indexer";
 
 // The result depends on live chain state and the ?repo query — never cache it.
@@ -40,8 +40,8 @@ function HashRow({ label, value, href }: { label: string; value: string; href?: 
 }
 
 /** Registered repo → the full provenance summary and links into the proof. */
-async function FoundResult({ lookup }: { lookup: RepoLookup }) {
-  const project = await fetchProject(lookup.projectId);
+async function FoundResult({ lookup, cfg }: { lookup: RepoLookup; cfg: ChainConfig }) {
+  const project = await fetchProject(lookup.projectId, cfg);
   if (!project) {
     // Extremely rare: projectByRepo pointed at an id the reader couldn't load.
     return <NotFoundResult lookup={lookup} />;
@@ -92,12 +92,12 @@ async function FoundResult({ lookup }: { lookup: RepoLookup }) {
 
       <div className="space-y-2 mb-8">
         <HashRow label="repoHash" value={lookup.repoHash ?? ""} />
-        <HashRow label="owner" value={project.owner} href={explorerAddress(project.owner)} />
+        <HashRow label="owner" value={project.owner} href={explorerAddressOn(cfg, project.owner)} />
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
         <Link
-          href={`/p/${project.projectId}`}
+          href={`/p/${project.projectId}${chainSuffix(cfg)}`}
           className="flex-1 bg-primary-container text-on-primary-container px-6 py-3 rounded-lg text-label-sm uppercase tracking-widest text-center hover:brightness-110 active:scale-95 transition-all bloom-primary flex items-center justify-center gap-2"
         >
           <span className="material-symbols-outlined text-[18px]">account_tree</span>
@@ -193,19 +193,21 @@ function InvalidResult({ raw }: { raw: string }) {
   );
 }
 
-async function Result({ raw }: { raw: string }) {
-  const lookup = await lookupProjectByRepo(raw);
+async function Result({ raw, cfg }: { raw: string; cfg: ChainConfig }) {
+  const lookup = await lookupProjectByRepo(raw, cfg);
   if (!lookup.path) return <InvalidResult raw={raw} />;
   if (lookup.projectId < 1) return <NotFoundResult lookup={lookup} />;
-  return <FoundResult lookup={lookup} />;
+  return <FoundResult lookup={lookup} cfg={cfg} />;
 }
 
 export default async function VerifyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ repo?: string }>;
+  searchParams: Promise<{ repo?: string; chain?: string }>;
 }) {
-  const raw = ((await searchParams).repo ?? "").trim();
+  const sp = await searchParams;
+  const cfg = resolveChain(sp.chain);
+  const raw = (sp.repo ?? "").trim();
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -253,7 +255,7 @@ export default async function VerifyPage({
 
           {raw ? (
             <div className="mb-16">
-              <Result raw={raw} />
+              <Result raw={raw} cfg={cfg} />
             </div>
           ) : (
             <div className="mb-16 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -296,7 +298,7 @@ export default async function VerifyPage({
                 that a repository was bound to the chain and when. Full re-verification of the commit
                 and tree hashes is the CLI&apos;s job, and it needs nothing from Aletheia but the public
                 registry. Read the registry yourself on the{" "}
-                <a href={EXPLORER_URL} className="text-primary hover:underline">
+                <a href={cfg.explorerUrl} className="text-primary hover:underline">
                   block explorer
                 </a>
                 .

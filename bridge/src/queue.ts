@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import { account, publicClient, registryAbi, registryAddress, walletClient } from "./chain.js";
+import { account, registryAbi, type ChainCtx } from "./chain.js";
 import { markSubmissionsFailed, markSubmissionsSubmitted } from "./db.js";
 
 interface Job {
@@ -24,13 +24,16 @@ export type SubmitResult =
   | { ok: false; retryable: boolean };
 
 /**
- * Single serialized worker per attestor key. Nonce is fetched once at startup
- * and incremented locally; on a nonce error it re-syncs from the RPC and
- * retries once. Failures are persisted — never silently dropped.
+ * Single serialized worker per (attestor key, chain). Nonces are per-chain
+ * account state, so each configured chain gets its own queue; within a queue
+ * the nonce is fetched once and incremented locally, with one resync retry on
+ * nonce errors. Failures are persisted — never silently dropped.
  */
 class TxQueue {
   private chain: Promise<void> = Promise.resolve();
   private nonce: number | null = null;
+
+  constructor(private readonly ctx: ChainCtx) {}
 
   enqueue(job: Job): Promise<SubmitResult> {
     const result = this.chain.then(() => this.process(job));
@@ -43,7 +46,7 @@ class TxQueue {
   }
 
   private async syncNonce(): Promise<number> {
-    this.nonce = await publicClient.getTransactionCount({
+    this.nonce = await this.ctx.publicClient.getTransactionCount({
       address: account.address,
       blockTag: "pending",
     });
@@ -56,15 +59,15 @@ class TxQueue {
 
     const txHash =
       job.pairs.length === 1
-        ? await walletClient.writeContract({
-            address: registryAddress,
+        ? await this.ctx.walletClient.writeContract({
+            address: this.ctx.registryAddress,
             abi: registryAbi,
             functionName: "attest",
             args: [job.projectId, job.pairs[0]!.commit32, job.pairs[0]!.tree32],
             nonce,
           })
-        : await walletClient.writeContract({
-            address: registryAddress,
+        : await this.ctx.walletClient.writeContract({
+            address: this.ctx.registryAddress,
             abi: registryAbi,
             functionName: "attestBatch",
             args: [job.projectId, job.pairs.map((p) => p.commit32), job.pairs.map((p) => p.tree32)],
@@ -76,6 +79,7 @@ class TxQueue {
   }
 
   private async process(job: Job): Promise<SubmitResult> {
+    const tag = `project=${job.projectId} chain=${this.ctx.id}`;
     // Phase 1: obtain a tx hash. A failure here means nothing was submitted.
     let txHash: Hex;
     try {
@@ -96,7 +100,7 @@ class TxQueue {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`attestation not submitted project=${job.projectId}: ${msg}`);
+      console.error(`attestation not submitted ${tag}: ${msg}`);
       await markSubmissionsFailed(job.submissionIds, `not submitted: ${msg}`);
       this.nonce = null; // resync before the next job — nonce state is unknown
       return { ok: false, retryable: true };
@@ -105,18 +109,21 @@ class TxQueue {
     // Phase 2: a tx exists on the wire. Whatever happens now, retrying risks a
     // double attestation, so this branch never reports retryable.
     try {
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+      const receipt = await this.ctx.publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        timeout: 60_000,
+      });
       if (receipt.status === "success") {
         await markSubmissionsSubmitted(job.submissionIds, txHash);
         return { ok: true, txHash };
       }
-      console.error(`attestation reverted project=${job.projectId} tx=${txHash}`);
+      console.error(`attestation reverted ${tag} tx=${txHash}`);
       await markSubmissionsFailed(job.submissionIds, `reverted: ${txHash}`);
       this.nonce = null;
       return { ok: false, retryable: false };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`attestation receipt unknown project=${job.projectId} tx=${txHash}: ${msg}`);
+      console.error(`attestation receipt unknown ${tag} tx=${txHash}: ${msg}`);
       await markSubmissionsFailed(job.submissionIds, `receipt unknown (tx ${txHash}): ${msg}`);
       this.nonce = null;
       return { ok: false, retryable: false };
@@ -124,4 +131,14 @@ class TxQueue {
   }
 }
 
-export const txQueue = new TxQueue();
+const queues = new Map<number, TxQueue>();
+
+/** The serialized attestation queue for a chain — one per configured chain. */
+export function queueFor(ctx: ChainCtx): TxQueue {
+  let q = queues.get(ctx.id);
+  if (!q) {
+    q = new TxQueue(ctx);
+    queues.set(ctx.id, q);
+  }
+  return q;
+}

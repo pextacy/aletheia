@@ -8,11 +8,12 @@ export interface CommitMeta {
  * bridge DB — absence (bridge down, project on the trustless Action path)
  * degrades to no markers, never to an error.
  */
-export async function fetchForcedCommits(projectId: number): Promise<Set<string>> {
+export async function fetchForcedCommits(projectId: number, chainId?: number): Promise<Set<string>> {
   const bridgeUrl = process.env.NEXT_PUBLIC_BRIDGE_URL;
   if (!bridgeUrl) return new Set();
   try {
-    const res = await fetch(`${bridgeUrl}/status/${projectId}`, {
+    const chainQs = chainId === undefined ? "" : `?chain=${chainId}`;
+    const res = await fetch(`${bridgeUrl}/status/${projectId}${chainQs}`, {
       next: { revalidate: 60 },
     });
     if (!res.ok) return new Set();

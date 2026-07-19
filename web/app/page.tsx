@@ -1,16 +1,8 @@
 import Link from "next/link";
 import RegisterFlow from "../components/RegisterFlow";
 import { SiteFooter, TopNav } from "../components/Chrome";
-import {
-  CHAIN_NAME,
-  CHAIN_ID,
-  EXPLORER_URL,
-  REGISTRY_ADDRESS,
-  RPC_URL,
-  explorerAddress,
-  publicClient,
-  registryAbi,
-} from "../lib/chain";
+import { registryAbi } from "../lib/chain";
+import { chainSuffix, explorerAddressOn, resolveChain } from "../lib/chains";
 import { fetchRecentProjects } from "../lib/indexer";
 
 // Rendered at request time: recent projects and counts are live chain state.
@@ -25,11 +17,16 @@ function repoName(url: string): string {
   return url.replace(/^https?:\/\//, "").replace(/^github\.com\//, "");
 }
 
-export default async function Landing() {
+export default async function Landing({
+  searchParams,
+}: {
+  searchParams: Promise<{ chain?: string }>;
+}) {
+  const cfg = resolveChain((await searchParams).chain);
   const [recent, projectCount] = await Promise.all([
-    fetchRecentProjects().catch(() => []),
-    publicClient
-      .readContract({ address: REGISTRY_ADDRESS, abi: registryAbi, functionName: "projectCount" })
+    fetchRecentProjects(12, cfg).catch(() => []),
+    cfg.client
+      .readContract({ address: cfg.registryAddress, abi: registryAbi, functionName: "projectCount" })
       .catch(() => 0n),
   ]);
 
@@ -45,7 +42,7 @@ export default async function Landing() {
                 verified
               </span>
               <span className="text-secondary text-label-sm tracking-wider uppercase">
-                Live on {CHAIN_NAME} · chain {CHAIN_ID}
+                Live on {cfg.name} · chain {cfg.id}
               </span>
             </div>
             <h1 className="font-display text-[34px] leading-[1.1] sm:text-[40px] md:text-headline-xl mb-6">
@@ -59,17 +56,17 @@ export default async function Landing() {
             </p>
             <div id="register" className="max-w-xl scroll-mt-28">
               <RegisterFlow
-                registryAddress={REGISTRY_ADDRESS}
+                registryAddress={cfg.registryAddress}
                 attestorAddress={ATTESTOR_ADDRESS}
                 bridgeUrl={BRIDGE_URL}
-                chainId={CHAIN_ID}
-                rpcUrl={RPC_URL}
-                explorerUrl={EXPLORER_URL}
+                chainId={cfg.id}
+                rpcUrl={cfg.rpcUrl}
+                explorerUrl={cfg.explorerUrl}
               />
               <p className="mt-3 text-mono-data font-mono text-outline">
                 One transaction, then a webhook — every push self-attests from that moment.{" "}
-                <a className="text-primary hover:underline" href={explorerAddress(REGISTRY_ADDRESS)}>
-                  registry {REGISTRY_ADDRESS.slice(0, 10)}…
+                <a className="text-primary hover:underline" href={explorerAddressOn(cfg, cfg.registryAddress)}>
+                  registry {cfg.registryAddress.slice(0, 10)}…
                 </a>
               </p>
             </div>
@@ -273,7 +270,7 @@ export default async function Landing() {
               </p>
             </div>
             <a
-              href={explorerAddress(REGISTRY_ADDRESS)}
+              href={explorerAddressOn(cfg, cfg.registryAddress)}
               className="hidden md:flex items-center gap-2 text-primary text-label-sm uppercase hover:underline"
             >
               View on explorer
@@ -289,7 +286,7 @@ export default async function Landing() {
               {recent.map((p, i) => (
                 <Link
                   key={p.projectId}
-                  href={`/p/${p.projectId}`}
+                  href={`/p/${p.projectId}${chainSuffix(cfg)}`}
                   className="glass-panel p-6 rounded-xl hover:-translate-y-1 transition-all duration-300 block"
                 >
                   <div className="flex justify-between items-start mb-6">
@@ -361,7 +358,7 @@ export default async function Landing() {
                 },
                 {
                   q: "Which chain, and what does it cost?",
-                  a: `${CHAIN_NAME} (chain ${CHAIN_ID}). Registration is a single transaction; each push is one attestation. No token, no payment.`,
+                  a: `${cfg.name} (chain ${cfg.id}). Registration is a single transaction; each push is one attestation. No token, no payment.`,
                 },
               ].map((f) => (
                 <details

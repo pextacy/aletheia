@@ -1,3 +1,4 @@
+import type { ChainCtx } from "./chain.js";
 import { getVerification, saveVerification, touchVerificationScan } from "./db.js";
 import { countAttestationsSince, verifyProject, type VerifyReport } from "./verify.js";
 
@@ -10,8 +11,9 @@ const MAX_AGE_SEC = 3600;
 /** Max concurrent repo clones across all projects — bounds disk/network/CPU. */
 const MAX_CONCURRENT_CLONES = 3;
 
-// One in-flight verification per project — concurrent requests share the clone.
-const inFlight = new Map<number, Promise<VerifyReport>>();
+// One in-flight verification per (chain, project) — concurrent requests share
+// the clone.
+const inFlight = new Map<string, Promise<VerifyReport>>();
 
 // Global semaphore so a burst of distinct-project verifications can't spawn an
 // unbounded number of simultaneous clones and exhaust the host.
@@ -50,31 +52,34 @@ function nowSec(): number {
  *    attestations and not too old ⇒ still valid, advance the floor;
  * 3. full re-verify (clone + recompute), shared across concurrent callers.
  */
-export async function getVerifyResult(projectId: number): Promise<VerifyResult> {
-  const cached = await getVerification(projectId);
+export async function getVerifyResult(ctx: ChainCtx, projectId: number): Promise<VerifyResult> {
+  const cached = await getVerification(ctx.id, projectId);
   const age = cached ? nowSec() - cached.verifiedAt : Infinity;
   if (cached && age < FRESH_SEC) {
     return { report: JSON.parse(cached.report) as VerifyReport, cached: true };
   }
   if (cached && cached.lastBlock > 0 && age < MAX_AGE_SEC) {
     const { count, latest } = await countAttestationsSince(
+      ctx,
       projectId,
       BigInt(cached.lastBlock) + 1n
     );
     if (count === 0) {
-      await touchVerificationScan(projectId, Number(latest));
+      await touchVerificationScan(ctx.id, projectId, Number(latest));
       return { report: JSON.parse(cached.report) as VerifyReport, cached: true };
     }
   }
 
-  let pending = inFlight.get(projectId);
+  const key = `${ctx.id}:${projectId}`;
+  let pending = inFlight.get(key);
   if (!pending) {
     pending = (async () => {
       await acquireCloneSlot();
       try {
-        const report = await verifyProject(projectId);
+        const report = await verifyProject(ctx, projectId);
         report.verifiedAt = nowSec();
         await saveVerification(
+          ctx.id,
           projectId,
           report.attestationCount,
           JSON.stringify(report),
@@ -87,10 +92,10 @@ export async function getVerifyResult(projectId: number): Promise<VerifyResult> 
         // Clear the slot from inside the same promise so no extra, un-awaited
         // chain is created — a dangling `.finally()` would surface a rejected
         // clone as an unhandled rejection and crash the process.
-        inFlight.delete(projectId);
+        inFlight.delete(key);
       }
     })();
-    inFlight.set(projectId, pending);
+    inFlight.set(key, pending);
   }
 
   const report = await pending;
