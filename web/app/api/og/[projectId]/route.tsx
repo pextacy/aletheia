@@ -156,7 +156,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ project
 
         {/* footer */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 16, color: MUTED }}>on-chain build provenance · {CHAIN_NAME}</div>
+          <div style={{ fontSize: 16, color: MUTED }}>{`on-chain build provenance · ${CHAIN_NAME}`}</div>
           <div style={{ fontSize: 16, color: FUCHSIA_SOFT, letterSpacing: 2 }}>ALETHEIA.PROOF</div>
         </div>
       </div>
