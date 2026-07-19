@@ -43,27 +43,29 @@ done.
 After it runs, note the printed `REGISTRY_ADDRESS` and `DEPLOY_BLOCK` — both feed
 the bridge and web.
 
-## 2. Bridge → Railway
+## 2. Bridge → Render
 
-The bridge is a long-running Node service with a Dockerfile and `railway.json`
-(Dockerfile builder, `/healthz` healthcheck, restart-on-failure).
+The bridge is a long-running Node service deployed from `render.yaml` (Docker
+runtime, root directory `bridge`, `/healthz` healthcheck).
 
-1. New Railway service from this repo, **root directory `bridge`**.
-2. Set env vars:
+1. On [dashboard.render.com](https://dashboard.render.com): **New → Blueprint**,
+   pick this repo — it reads `render.yaml`.
+2. Set the secret env vars when prompted (non-secret ones come from the
+   blueprint):
    | var | value |
    |---|---|
-   | `CHAIN_ID` | `10143` |
-   | `RPC_URL` | your Monad RPC |
-   | `REGISTRY_ADDRESS` | from step 1 |
    | `ATTESTOR_PRIVATE_KEY` | attestor hot key |
    | `GITHUB_WEBHOOK_SECRET` | `openssl rand -hex 32` (the default/global secret) |
    | `GITHUB_TOKEN` | read-only token (higher API limits) |
    | `DATABASE_URL` | Neon Postgres connection string (pooled) |
-   | `PORT` | `8787` |
 3. Deploy. Confirm `GET /healthz` returns `ok: true` and a non-zero attestor
    balance.
-4. On this repo, add the GitHub webhook: **Settings → Webhooks → Add webhook**,
-   Payload URL `https://<service>.up.railway.app/webhook/github`, content type
+4. Set the `ALETHEIA_BRIDGE_URL` repository variable to the service URL so
+   `.github/workflows/keepalive.yml` keeps the free-plan service warm (it
+   spins down after ~15 min idle, and a cold start exceeds GitHub's 10 s
+   webhook timeout).
+5. On this repo, add the GitHub webhook: **Settings → Webhooks → Add webhook**,
+   Payload URL `https://<service>.onrender.com/webhook/github`, content type
    `application/json`, secret = `GITHUB_WEBHOOK_SECRET`, event = *just the push
    event*. (Per-project secrets registered from the web landing page override the
    global one.)
@@ -87,7 +89,7 @@ Server components fetch chain data; no RPC keys reach the browser.
    | `DEPLOY_BLOCK` | from step 1 |
    | `GITHUB_TOKEN` | read-only token (commit metadata) |
    | `NEXT_PUBLIC_ATTESTOR_ADDRESS` | attestor address |
-   | `NEXT_PUBLIC_BRIDGE_URL` | the Railway URL from step 2 |
+   | `NEXT_PUBLIC_BRIDGE_URL` | the Render URL from step 2 |
    | `NEXT_PUBLIC_SITE_URL` | the final Vercel URL (for OG image resolution) |
 3. Deploy. Open `/p/1` and confirm project #1's timeline renders with the live
    verification banner.

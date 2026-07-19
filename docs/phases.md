@@ -90,7 +90,7 @@ Notes:
 - [x] `GET /status/:projectId` — recent submissions incl. failure states
 - [x] `GET /healthz` — RPC block number + attestor balance, warn below 0.5 MON
 - [x] Per-project webhook secrets bound by EIP-191 owner signature (`POST /webhook/register-secret`)
-- [ ] Deploy to Railway (state in Neon Postgres via `DATABASE_URL`, no volume) *(deferred: chain steps batched to the end per user)*
+- [ ] Deploy to Render (state in Neon Postgres via `DATABASE_URL`, no volume; keepalive workflow counters free-plan spin-down)
 - [ ] Configure the real GitHub webhook on this repo *(deferred)*
 - [ ] End-to-end test: local commit → push → `Attested` event on explorer *(deferred)*
 

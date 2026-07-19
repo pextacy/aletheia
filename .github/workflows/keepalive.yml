@@ -1,0 +1,25 @@
+# Keeps the Render free-plan bridge warm: it spins down after ~15 min idle and
+# a cold start (~50 s) exceeds GitHub's 10 s webhook delivery timeout, which
+# would silently drop push attestations. Pings /healthz every 10 minutes.
+#
+# Configure the repository variable ALETHEIA_BRIDGE_URL (e.g.
+# https://aletheia-bridge.onrender.com) — the job no-ops until it is set.
+name: keepalive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping bridge healthcheck
+        env:
+          BRIDGE_URL: ${{ vars.ALETHEIA_BRIDGE_URL }}
+        run: |
+          if [ -z "$BRIDGE_URL" ]; then
+            echo "ALETHEIA_BRIDGE_URL not configured — skipping."
+            exit 0
+          fi
+          curl -fsS --max-time 60 "$BRIDGE_URL/healthz"

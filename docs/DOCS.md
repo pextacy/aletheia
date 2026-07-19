@@ -125,7 +125,7 @@ Steps: read `ProjectRegistered` + all `Attested` events; shallow-clone the repo 
 ## 7. Deployment
 
 - Contract: `forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast --verify` to Monad testnet (chain ID 10143); verified source on the explorer is mandatory. The deploy script asserts the chain ID before broadcasting and writes the deployed address to `deployments/10143.json`, which bridge and web read at build time.
-- Bridge: Railway, single service; all state (deliveries, submissions, webhook secrets, verification cache) in Neon Postgres via `DATABASE_URL`. Attestor wallet funded from the Monad faucet; `/healthz` monitors balance.
+- Bridge: Render, single Docker service; all state (deliveries, submissions, webhook secrets, verification cache) in Neon Postgres via `DATABASE_URL`. Attestor wallet funded from the Monad faucet; `/healthz` monitors balance.
 - Web: Vercel. All RPC calls server-side; the browser receives rendered HTML plus explorer links only.
 - Dogfooding: this repository registers itself as project #1 immediately after deployment. The proof page of Aletheia's own build is the primary demo artifact.
 

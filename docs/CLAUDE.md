@@ -27,7 +27,7 @@ Three components live in this monorepo:
 - Solidity `^0.8.24`, Foundry (forge/anvil/cast). OpenZeppelin Contracts v5 for `Ownable2Step` only; everything else hand-rolled and small.
 - Node.js 20 LTS, TypeScript 5 strict mode everywhere. ESM modules.
 - `viem` for all chain interaction (bridge, web, cli). Do not introduce ethers.js.
-- Bridge: Fastify. Deployed as a single long-running Node process (Railway). Raw request body must be preserved for HMAC verification — configure Fastify's content type parser accordingly.
+- Bridge: Fastify. Deployed as a single long-running Node process (Render). Raw request body must be preserved for HMAC verification — configure Fastify's content type parser accordingly.
 - Web: Next.js 14 App Router, Tailwind. Server components fetch chain data; no client-side RPC keys.
 - CLI: plain TypeScript compiled with tsup, published as `aletheia-verify` with a `bin` entry, executes `git` via `child_process` — it must run against a fresh `git clone` with no dependencies beyond Node and Git.
 
